@@ -25,7 +25,7 @@ from openpilot.selfdrive.modeld.parse_model_outputs import Parser
 from openpilot.selfdrive.modeld.fill_model_msg import fill_model_msg, fill_pose_msg, PublishState
 from openpilot.common.file_chunker import read_file_chunked, get_manifest_path
 from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
-from openpilot.selfdrive.modeld.helpers import usbgpu_present, modeld_pkl_path, get_tg_input_devices
+from openpilot.selfdrive.modeld.helpers import usbgpu_present, modeld_pkl_path, get_tg_input_devices, use_builtin_usbgpu
 from dragonpilot.selfdrive.controls.lib.road_edge_detector import RoadEdgeDetector
 from dragonpilot import jetlink_adapter
 
@@ -202,8 +202,9 @@ def main(demo=False, egpu_loader=None):
 
   _present = usbgpu_present()
   _compiled = EGPU or os.path.isfile(get_manifest_path(modeld_pkl_path(usbgpu=True)))
-  USBGPU = _present and _compiled
   params = Params()
+  egpu_failed = params.get_bool("dp_egpu_failed")
+  USBGPU = use_builtin_usbgpu(_present, _compiled, egpu_failed)
   params.put_bool("UsbGpuPresent", _present)
   params.put_bool("UsbGpuCompiled", _compiled)
 
@@ -255,7 +256,9 @@ def main(demo=False, egpu_loader=None):
     model = small_model
   # dp - jetlink: the small model drives until the attached device has joined, then it is swapped
   # in underneath (only while nothing is in control) and handed back on a lost or lagging link
-  if not EGPU and not USBGPU and (joined := jetlink_adapter.attach(small_model, vipc_client_main.width, vipc_client_main.height)) is not None:
+  if not EGPU and not USBGPU and not egpu_failed and (
+    joined := jetlink_adapter.attach(small_model, vipc_client_main.width, vipc_client_main.height)
+  ) is not None:
     model = joined
   cloudlog.warning(f"models loaded in {time.monotonic() - st:.1f}s, modeld starting")
 
@@ -435,7 +438,7 @@ def main(demo=False, egpu_loader=None):
       model_ext_send.modelExt.rightEdgeDetected = RED.right_edge_detected
       # dp - jetlink: zoompilot's modelDataV2SP.acceleratorState and modelV2.big
       model_ext_send.modelExt.acceleratorState = getattr(model, 'big_model_state', 'none')
-      model_ext_send.modelExt.bigModel = bool(getattr(model, 'chestnut', False)) and model is not small_model
+      model_ext_send.modelExt.bigModel = USBGPU or (bool(getattr(model, 'chestnut', False)) and model is not small_model)
       DH.update(sm['carState'], sm['carControl'].latActive, lane_change_prob, RED.left_edge_detected, RED.right_edge_detected)
       modelv2_send.modelV2.meta.laneChangeState = DH.lane_change_state
       modelv2_send.modelV2.meta.laneChangeDirection = DH.lane_change_direction

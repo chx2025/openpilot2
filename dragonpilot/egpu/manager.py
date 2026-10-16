@@ -31,8 +31,9 @@ from openpilot.common.swaglog import cloudlog
 from dragonpilot.egpu.bundles import (cached_bundles, find_bundle, get_active_bundle, pointer_for, onnx_present, model_compiled,
                                       warps_present)
 from dragonpilot.egpu.constants import (MANIFEST_CACHE_TIMEOUT_S, CAMERA_CONFIGS, CACHE_TAG, TG_FLAGS_QCOM, TG_FLAGS_AMD, EGPU_DIR,
-                                        P_PRESENT, P_ACTIVE_BUNDLE, P_MANIFEST_SYNC, P_POINTERS, P_DOWNLOAD_REF,
-                                        P_STATUS, P_DELETE_REF, P_CLEAR_CACHE, P_ENABLED, P_SEEN, P_AUTO_DEFAULT, DEFAULT_REF, AUTO_RETRY_S, ST_IDLE, ST_RESOLVING, ST_DOWNLOADING,
+                                        P_PRESENT, P_ACTIVE_BUNDLE, P_MANIFEST_SYNC, P_POINTERS, P_DOWNLOAD_REF, P_FAILED, P_LOADING, P_RUNNING,
+                                        P_STATUS, P_DELETE_REF, P_CLEAR_CACHE, P_ENABLED, P_SEEN, P_AUTO_DEFAULT, DEFAULT_REF, AUTO_RETRY_S,
+                                        ST_IDLE, ST_RESOLVING, ST_DOWNLOADING,
                                         ST_COMPILING_WARP, ST_COMPILING, ST_DONE, ST_FAILED, ST_CANCELLED, ST_WAITING_EGPU,
                                         model_root, onnx_path, model_pkl_name, warp_pkl_name)
 from dragonpilot.egpu.usb import egpu_present, egpu_rom_present, wait_pcie_link
@@ -323,6 +324,9 @@ class EgpuModelManager:
       self.params.put_bool(P_SEEN, True)
 
     if self.params.get_bool("IsOnroad"):
+      if not present and (self.params.get_bool(P_LOADING) or self.params.get_bool(P_RUNNING)) and not self.params.get_bool(P_FAILED):
+        cloudlog.error("egpu: USB disappeared while the big model was loading/running; failing this drive for stock fallback")
+        self.params.put_bool(P_FAILED, True, block=True)
       return
 
     self.refresh_catalog()

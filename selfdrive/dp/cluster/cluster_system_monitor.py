@@ -46,6 +46,7 @@ class SystemStatsSampler:
         self._chestnut_seen = False
         self._chestnut_failed = False
         self._chestnut_model_seen = False
+        self._small_model_active = False
 
     def sample(self, now: float | None = None) -> SystemStats:
         # Thermal zone reads can block for tens of ms on device, so sample off the render thread.
@@ -100,8 +101,14 @@ class SystemStatsSampler:
 
             if self._params is None:
                 return "model unknown"
-            if chestnut_state != CHESTNUT_ACTIVE:
+            if self._small_model_active:
                 return "S: stock"
+            if chestnut_state != CHESTNUT_ACTIVE:
+                if chestnut_state == CHESTNUT_LOADING:
+                    return "B: loading"
+                if chestnut_state == CHESTNUT_FAILED:
+                    return "model failed"
+                return "model idle" if not self._chestnut_onroad else "model waiting"
             bundle = self._params.get(P_ACTIVE_BUNDLE)
             if not isinstance(bundle, dict):
                 raise ValueError("Active eGPU model has no bundle metadata")
@@ -114,6 +121,7 @@ class SystemStatsSampler:
             return "model unknown"
 
     def _read_chestnut_state(self) -> str | None:
+        self._small_model_active = False
         if self._params is None:
             if self._params_unavailable:
                 return None
@@ -151,6 +159,12 @@ class SystemStatsSampler:
                 return None
             self._chestnut_seen |= loading or active
             big = bool(sm["modelExt"].bigModel)
+            self._small_model_active = (
+                not big and all(
+                    sm.recv_frame[service] > 0 and sm.alive[service] and sm.valid[service]
+                    for service in ("deviceState", "modelV2", "modelExt")
+                )
+            )
             self._chestnut_model_seen |= active and sm.updated["modelExt"] and big
             if failed or (self._chestnut_seen and (
                 not detected or not enabled or not sm.alive["deviceState"] or not sm.valid["deviceState"]

@@ -713,6 +713,12 @@ still exists, so that fallback does not guarantee native's one-frame-in-flight
 bound. Synchronous JPEG/PNG paths naturally block rather than queue frames.
 Missing native encoder output for three seconds raises an explicit error for
 autorun to restart the HUD; normal backpressure is not treated as an error.
+The model label shows `S: stock` only after valid, live `modelV2` and
+`modelExt.bigModel=false` publications are observed onroad. Loading, failed,
+waiting, and offroad states do not imply that stock inference has started.
+The Chestnut failure icon stays latched for the drive even after stock output
+recovers. Built-in USB big-model output also sets `modelExt.bigModel=true`,
+so it cannot be mistaken for a small model.
 The regular status log's cumulative `usb_dropped` counter reports skipped
 busy-frame attempts. This reduces stale HUD backlog, not GPU/USB fault timeouts,
 and cannot cancel an already-running USB transfer.

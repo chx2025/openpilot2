@@ -59,11 +59,15 @@ class ModelNameTests(unittest.TestCase):
         self.params.get.return_value = {"short_name": "TT", "display_name": "Tee Time"}
         self.sampler._params = self.params
 
-    def test_inactive_states_use_small_model(self):
-        for state in (None, CHESTNUT_LOADING, CHESTNUT_FAILED):
+    def test_inactive_states_do_not_claim_small_model(self):
+        for state, label in ((None, "model idle"), (CHESTNUT_LOADING, "B: loading"), (CHESTNUT_FAILED, "model failed")):
             with self.subTest(state=state):
-                self.assertEqual(self.sampler._read_model_name(state), "S: stock")
+                self.assertEqual(self.sampler._read_model_name(state), label)
         self.params.get.assert_not_called()
+
+    def test_confirmed_small_output_overrides_failed_icon(self):
+        self.sampler._small_model_active = True
+        self.assertEqual(self.sampler._read_model_name(CHESTNUT_FAILED), "S: stock")
 
     def test_active_uses_dragonpilot_bundle(self):
         self.assertEqual(self.sampler._read_model_name(CHESTNUT_ACTIVE), "B: TT")
@@ -79,7 +83,7 @@ class ModelNameTests(unittest.TestCase):
             self.assertEqual(self.sampler._read_model_name(CHESTNUT_ACTIVE), "model unknown")
 
     def test_disconnected_with_stale_active_param(self):
-        self.assertEqual(self.sampler._read_model_name(CHESTNUT_FAILED), "S: stock")
+        self.assertEqual(self.sampler._read_model_name(CHESTNUT_FAILED), "model failed")
         self.params.get.assert_not_called()
 
     def test_read_error_is_explicit(self):
@@ -133,6 +137,19 @@ class ChestnutHealthTests(unittest.TestCase):
 
     def test_healthy_big_model_is_active(self):
         self.assertEqual(self.sampler._read_chestnut_state(), CHESTNUT_ACTIVE)
+
+    def test_small_model_requires_valid_live_publications(self):
+        self.model.bigModel = False
+        self.flags["dp_egpu_running"] = False
+        self.sampler._read_chestnut_state()
+        self.assertEqual(self.sampler._read_model_name(None), "S: stock")
+        for service in ("modelV2", "modelExt", "deviceState"):
+            for field in ("alive", "valid"):
+                with self.subTest(service=service, field=field):
+                    getattr(self.sm, field)[service] = False
+                    state = self.sampler._read_chestnut_state()
+                    self.assertNotEqual(self.sampler._read_model_name(state), "S: stock")
+                    getattr(self.sm, field)[service] = True
 
     def test_stale_active_cannot_hide_runtime_failures(self):
         for failure in ("disconnected", "device_stale", "model_stale", "extension_stale", "small_model"):

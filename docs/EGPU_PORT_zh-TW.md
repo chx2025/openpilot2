@@ -41,6 +41,13 @@ v2 改成**下載模型的 onnx、在車上自己編譯一次**，warp 永遠編
 
 不開啟硬體的回歸測試：`pytest selfdrive/modeld/tests/test_usbgpu_device_ids.py`。完整 AMD 編譯與接著 Chestnut 開機仍需在裝置上驗證。
 
+### dpegpu00-cluster：使用中 USB 失聯的 fallback
+
+`egpu_manager` 在 onroad 偵測到 USB 裝置消失，且大模型正在載入或執行時，會同步設定 `dp_egpu_failed`，交由既有的單向路由停止 eGPU 程序並啟動 stock modeld。本趟不因 USB 重插而自動切回大模型。
+此檢查不依賴可能已卡住的 GPU 程序自行回報錯誤；但仍受 1 Hz USB 輪詢限制，不能偵測所有短暫斷線或 USB 仍存在的 GPU 停滯，也不代表已修正失聯的硬體根因。
+fallback 啟動的 stock modeld 會讀取 `dp_egpu_failed`，強制停用內建 USB 大模型與 Jetlink attach，避免 Chestnut 已重插時再次載入大模型。未失敗時保留原有內建 USB 模型選擇。
+回歸測試：`pytest selfdrive/modeld/tests/test_egpu_disconnect.py`。桌上測試不等同道路安全驗證。
+
 編譯結果的快取鍵含 tinygrad ref（`tg9cd40014v1`）：之後若更新隨附 tinygrad，舊編譯檔自動作廢、使用中的模型自動重編。
 
 ---
