@@ -1,0 +1,4 @@
+.gitattributes text eol=lf
+selfdrive/dp/** text=auto eol=lf
+selfdrive/dp/cluster/assets/** binary
+selfdrive/dp/cluster/.vendor/** -whitespace
