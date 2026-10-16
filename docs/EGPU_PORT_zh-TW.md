@@ -33,6 +33,14 @@ v2 改成**下載模型的 onnx、在車上自己編譯一次**，warp 永遠編
 
 為什麼要全新直譯器：`system/manager/process.py` 的 `prepare()` 會在 manager 內 preimport 所有 PythonProcess，fork 出來的子行程繼承 dp 的 `tinygrad`。所以 `modeld_egpu` 是 **NativeProcess**，`compile.py` 由 `egpu_manager` 以 subprocess 啟動；兩者第一行 `import tg_env` 把隨附版放到 `sys.path[0]`，並 assert 真的載到隨附版。
 
+### dpegpu00-cluster：開機編譯的 USB ID 相容性修正
+
+兩份 tinygrad 的 USB AMD 後端均接受 `ADD1:0001`、`3801:0001`、`ADD1:0002`，與 `selfdrive/modeld/helpers.py` 的偵測清單一致。
+原版 dp tinygrad 只接受 `ADD1:0001`，因此接著 `3801:0001` Chestnut 開機時，SCons 會偵測到 eGPU、啟動內建大模型編譯，卻在底層報 `AMD:0 does not exist (0 devices available)`。
+此修正保留原 ID 的枚舉優先順序、裝置可見性篩選及無裝置時的錯誤；不改模型、功耗或編譯流程，也不保證解決其他 GPU 初始化／推論停滯。
+
+不開啟硬體的回歸測試：`pytest selfdrive/modeld/tests/test_usbgpu_device_ids.py`。完整 AMD 編譯與接著 Chestnut 開機仍需在裝置上驗證。
+
 編譯結果的快取鍵含 tinygrad ref（`tg9cd40014v1`）：之後若更新隨附 tinygrad，舊編譯檔自動作廢、使用中的模型自動重編。
 
 ---
