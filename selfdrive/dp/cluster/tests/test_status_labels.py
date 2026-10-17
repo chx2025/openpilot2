@@ -60,7 +60,7 @@ class ModelNameTests(unittest.TestCase):
         self.sampler._params = self.params
 
     def test_inactive_states_do_not_claim_small_model(self):
-        for state, label in ((None, "model idle"), (CHESTNUT_LOADING, "loading"), (CHESTNUT_FAILED, "model failed")):
+        for state, label in ((None, "idle"), (CHESTNUT_LOADING, "loading"), (CHESTNUT_FAILED, "model failed")):
             with self.subTest(state=state):
                 self.assertEqual(self.sampler._read_model_name(state), label)
         self.params.get.assert_not_called()
