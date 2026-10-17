@@ -52,9 +52,10 @@ def region_method(matrix):
 
 
 @pytest.mark.parametrize("region,source,target,scale", [
-    ("speed", (255, 350), (260, 240), 0.9),
+    ("speed", (255, 350), (250, 240), 0.9),
     ("gear", (1615, 350), (1660, 240), 0.62),
     ("status", (960, 0), (960, 16), 0.7),
+    ("top_status", (960, 0), (960, -14), 0.7),
 ])
 def test_compact_native_centers_and_undistorted_sizes(region, source, target, scale):
     matrix = Matrix()
@@ -67,7 +68,7 @@ def test_compact_native_centers_and_undistorted_sizes(region, source, target, sc
     assert matrix.stack == []
 
 
-@pytest.mark.parametrize("region", ["speed", "gear", "status"])
+@pytest.mark.parametrize("region", ["speed", "gear", "status", "top_status"])
 def test_large_panel_does_not_change_existing_matrix(region):
     matrix = Matrix()
     with region_method(matrix)(SimpleNamespace(_compact_panel=False), region):
@@ -78,13 +79,14 @@ def test_large_panel_does_not_change_existing_matrix(region):
 def test_compact_status_row_stays_between_side_panels_and_above_road():
     matrix = Matrix()
     matrix.rl_scalef(1, 462 / 720, 1)
-    with region_method(matrix)(SimpleNamespace(_compact_panel=True), "status"):
+    with region_method(matrix)(SimpleNamespace(_compact_panel=True), "top_status"):
         # Include the full turn-signal texture on each side and the detail row.
         left, _ = matrix.point(595 - 64, 94)
         right, bottom = matrix.point(1325 + 64, 190)
         assert left >= 580
         assert right <= 1340
         assert bottom <= 150
+    with region_method(matrix)(SimpleNamespace(_compact_panel=True), "status"):
         # ACC-off wheel and steering text remain within the shorter panel.
         _, off_bottom = matrix.point(960, 600)
         assert off_bottom < 462
@@ -97,6 +99,37 @@ def test_compact_transform_cleanup_after_draw_error():
             raise RuntimeError("draw failed")
     assert matrix.transform == (1, 1, 0, 0)
     assert matrix.stack == []
+
+
+def test_compact_top_row_moves_thirty_pixels_without_moving_other_status():
+    matrix = Matrix()
+    matrix.rl_scalef(1, 462 / 720, 1)
+    region = region_method(matrix)
+    renderer = SimpleNamespace(_compact_panel=True)
+    with region(renderer, "status"):
+        original = matrix.point(960, 94)
+    with region(renderer, "top_status"):
+        moved = matrix.point(960, 94)
+        _, top = matrix.point(960, 94 - 64)
+    assert moved == pytest.approx((original[0], original[1] - 30))
+    assert top >= 0
+    calls = {}
+    for method in RENDERER.body:
+        if not isinstance(method, ast.FunctionDef):
+            continue
+        for block in ast.walk(method):
+            if not isinstance(block, ast.With):
+                continue
+            regions = [item.context_expr.args[0].value for item in block.items
+                       if isinstance(item.context_expr, ast.Call)
+                       and isinstance(item.context_expr.func, ast.Attribute)
+                       and item.context_expr.func.attr == "_panel_region"]
+            for call in ast.walk(block):
+                if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and regions:
+                    calls.setdefault(call.func.attr, set()).update(regions)
+    for name in ("_draw_turn_signal", "_draw_acc_status_icon", "_draw_follow_gap_lane_icon",
+                 "_draw_lfa_status_icon", "_draw_drive_mode_icon", "_draw_chestnut_icon", "_draw_model_label"):
+        assert calls[name] == {"top_status"}
 
 
 @pytest.mark.parametrize("compact", [False, True])
@@ -130,7 +163,7 @@ def test_side_metrics_move_inward_only_on_compact_panel(compact):
     namespace = {"self": SimpleNamespace(_compact_panel=compact),
                  "TOP_SYSTEM_METRIC_LEFT_X": 260, "TOP_SYSTEM_METRIC_RIGHT_X": 1660}
     exec(compile(ast.Module(body=positions, type_ignores=[]), "<metric positions>", "exec"), namespace)
-    assert (namespace["left_x"], namespace["right_x"]) == ((340, 1580) if compact else (260, 1660))
+    assert (namespace["left_x"], namespace["right_x"]) == ((310, 1610) if compact else (260, 1660))
 
 
 @pytest.mark.parametrize("compact", [False, True])

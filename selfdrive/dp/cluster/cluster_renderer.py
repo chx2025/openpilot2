@@ -973,9 +973,10 @@ class ClusterUiRenderer:
         # Coordinates below are measured on the 1920x462 background. Undo the
         # outer HUD's vertical squeeze so text and icons keep their aspect ratio.
         center_x, center_y, scale, origin_x, origin_y = {
-            "speed": (260.0, 240.0, 0.9, SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y),
+            "speed": (250.0, 240.0, 0.9, SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y),
             "gear": (1660.0, 240.0, 0.62, GEAR_STATUS_CENTER_X, GEAR_STATUS_CENTER_Y),
             "status": (960.0, 16.0, 0.7, 960.0, 0.0),
+            "top_status": (960.0, -14.0, 0.7, 960.0, 0.0),
         }[region]
         vertical = DESIGN_HEIGHT / 462.0
         rl.rl_push_matrix()
@@ -2333,7 +2334,7 @@ class ClusterUiRenderer:
                 self._draw_speed_block(state)
             self._profile_add("hud.speed_block", profile_stage)
             profile_stage = self._profile_start()
-            with self._panel_region("status"):
+            with self._panel_region("top_status"):
                 self._draw_turn_signal("left", left_signal_lit, show_inactive=state.debug_ui_visible)
             self._profile_add("hud.turn_signal_left", profile_stage)
             profile_stage = self._profile_start()
@@ -2343,7 +2344,7 @@ class ClusterUiRenderer:
             self._draw_system_top_metrics()
             self._profile_add("hud.system_top_metrics", profile_stage)
             profile_stage = self._profile_start()
-            with self._panel_region("status"):
+            with self._panel_region("top_status"):
                 self._draw_turn_signal("right", right_signal_lit, show_inactive=state.debug_ui_visible)
             self._profile_add("hud.turn_signal_right", profile_stage)
             profile_stage = self._profile_start()
@@ -2635,8 +2636,8 @@ class ClusterUiRenderer:
         stats = self._system_stats.sample()
         temperature = stats.temperature_c
         memory_percent = stats.memory_used_percent
-        left_x = 340.0 if self._compact_panel else TOP_SYSTEM_METRIC_LEFT_X
-        right_x = 1580.0 if self._compact_panel else TOP_SYSTEM_METRIC_RIGHT_X
+        left_x = 310.0 if self._compact_panel else TOP_SYSTEM_METRIC_LEFT_X
+        right_x = 1610.0 if self._compact_panel else TOP_SYSTEM_METRIC_RIGHT_X
         if temperature is not None:
             self._draw_text(
                 f"TEMP {temperature:.0f}C",
@@ -2665,7 +2666,7 @@ class ClusterUiRenderer:
                 theme.text,
                 anchor="center",
             )
-        with self._panel_region("status"):
+        with self._panel_region("top_status"):
             self._draw_chestnut_icon(stats.chestnut_state)
             self._draw_model_label(stats.model_name)
 
@@ -3075,7 +3076,7 @@ class ClusterUiRenderer:
                     anchor="center",
                 )
 
-        with self._panel_region("status"):
+        with self._panel_region("top_status"):
             self._draw_acc_status_icon(state)
             self._draw_follow_gap_lane_icon(state, layout_progress)
             self._draw_lfa_status_icon(state, layout_progress)
