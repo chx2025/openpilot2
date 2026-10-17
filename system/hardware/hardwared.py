@@ -165,6 +165,8 @@ def hardware_thread(end_event, hw_queue) -> None:
   }
   startup_conditions: dict[str, bool] = {}
   startup_conditions_prev: dict[str, bool] = {}
+  startup_diagnostic_prev: dict[str, bool] = {}
+  startup_diagnostic_ts = 0.
 
   off_ts: float | None = None
   started_ts: float | None = None
@@ -338,6 +340,27 @@ def hardware_thread(end_event, hw_queue) -> None:
     should_start = not dp_dev_go_off_road and all(onroad_conditions.values())
     if started_ts is None:
       should_start = should_start and all(startup_conditions.values())
+
+    if not should_start:
+      diagnostic = {
+        **startup_conditions,
+        **onroad_conditions,
+        "not_forced_offroad": not dp_dev_go_off_road,
+        "panda_alive": bool(sm.alive["pandaStates"]),
+        "panda_valid": bool(sm.valid["pandaStates"]),
+        "panda_connected": len(pandaStates) > 0,
+      }
+      now = time.monotonic()
+      if diagnostic != startup_diagnostic_prev or now - startup_diagnostic_ts >= 30.:
+        cloudlog.event("Startup waiting", conditions=diagnostic,
+                      blockers=[name for name, passed in diagnostic.items() if not passed],
+                      ignition_line=any(ps.ignitionLine for ps in pandaStates),
+                      ignition_can=any(ps.ignitionCan for ps in pandaStates),
+                      harness_connected=in_car, error=False)
+        startup_diagnostic_prev = diagnostic
+        startup_diagnostic_ts = now
+    else:
+      startup_diagnostic_prev = {}
 
     if should_start != should_start_prev or (count == 0):
       params.put_bool("IsEngaged", False, block=True)

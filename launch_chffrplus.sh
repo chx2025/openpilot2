@@ -202,7 +202,7 @@ function launch {
 
   if [ -z "$CURRENT_COMMIT" ]; then
     if [ ! -f $DIR/prebuilt ]; then
-      ./build.py
+      ./build.py || return 1
     fi
   else
     DIRTY=$(git -C "$DIR" status --porcelain --untracked-files=normal 2>/dev/null)
@@ -213,7 +213,8 @@ function launch {
     else
       echo "偵測到程式碼變更（commit 或未提交修改），開始編譯..."
       ./build.py
-      if [ $? -eq 0 ]; then
+      BUILD_RESULT=$?
+      if [ "$BUILD_RESULT" -eq 0 ]; then
         # 只在乾淨狀態下寫入快取；有 dirty 改動時故意不寫，
         # 確保下次開機（不論改動有沒有 commit）都會重新判斷。
         if [ -z "$DIRTY" ]; then
@@ -221,6 +222,9 @@ function launch {
         else
           rm -f /data/.build_commit_cache
         fi
+      else
+        echo "Build failed ($BUILD_RESULT); refusing to start manager with incomplete build"
+        return "$BUILD_RESULT"
       fi
     fi
   fi
