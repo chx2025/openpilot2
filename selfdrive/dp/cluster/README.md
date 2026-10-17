@@ -49,6 +49,8 @@ unchanged relative to this positioning. The top icon row (including turn
 signals and GPU/model information) is shifted up 30 native pixels without
 moving AUTO HOLD or the ACC-off wheel/angle animation. The latter uses the compact central
 layout. The 12.3-inch HUD coordinates, sizes and road rendering are unchanged.
+The compact AUTO HOLD label is raised 35 native pixels to sit between the
+top-row details and the centered ACC-off LFA wheel; its size and blink are unchanged.
 The GPU model-name scrolling clip follows the compact top-row transform,
 keeping long labels inside the area directly below the GPU icon.
 When valid, live `carStateExt.autoBrakeHoldActive` reports actual brake hold

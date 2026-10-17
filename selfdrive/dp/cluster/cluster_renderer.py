@@ -834,7 +834,8 @@ class ClusterUiRenderer:
         rl.rl_scalef(self.width / DESIGN_WIDTH, self.height / DESIGN_HEIGHT, 1.0)
         try:
             with self._panel_region("status"):
-                self._draw_text("AUTO HOLD", DESIGN_WIDTH * 0.5, 230.0, 36.0, color, anchor="center")
+                self._draw_text("AUTO HOLD", DESIGN_WIDTH * 0.5, 180.0 if self._compact_panel else 230.0,
+                                36.0, color, anchor="center")
         finally:
             rl.rl_pop_matrix()
 

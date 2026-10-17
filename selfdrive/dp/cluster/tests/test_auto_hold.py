@@ -54,7 +54,8 @@ def test_hold_state_applies_without_debug_and_clears_immediately():
 
 
 @pytest.mark.parametrize("now,color", [(0, RED), (0.499, RED), (0.5, GREEN), (0.999, GREEN), (1, RED)])
-def test_hold_label_alternates_color_at_half_second(now, color):
+@pytest.mark.parametrize("compact", [False, True])
+def test_hold_label_alternates_color_at_half_second(now, color, compact):
     tree = ast.parse((CLUSTER_DIR / "cluster_renderer.py").read_text(encoding="utf-8"))
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ClusterUiRenderer")
     method = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "_draw_auto_hold")
@@ -73,10 +74,10 @@ def test_hold_label_alternates_color_at_half_second(now, color):
         ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), method,
     ], type_ignores=[])
     exec(compile(ast.fix_missing_locations(module), "<AUTO HOLD overlay>", "exec"), namespace)
-    renderer = SimpleNamespace(width=1920, height=462, _panel_region=lambda region: nullcontext(),
+    renderer = SimpleNamespace(width=1920, height=462, _compact_panel=compact, _panel_region=lambda region: nullcontext(),
                                _draw_text=lambda *args, **kwargs: calls.append((args, kwargs)))
     namespace["_draw_auto_hold"](renderer, SimpleNamespace(auto_brake_hold_active=False))
     assert calls == [] and matrices == []
     namespace["_draw_auto_hold"](renderer, SimpleNamespace(auto_brake_hold_active=True))
-    assert calls == [(("AUTO HOLD", 960.0, 230.0, 36.0, color), {"anchor": "center"})]
+    assert calls == [(("AUTO HOLD", 960.0, 180.0 if compact else 230.0, 36.0, color), {"anchor": "center"})]
     assert matrices == ["push", "pop"]
