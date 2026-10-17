@@ -164,6 +164,9 @@ TOP_STATUS_LABEL_FONT_SIZE = TOP_STATUS_DETAIL_FONT_SIZE * 0.9
 MODEL_LABEL_MAX_WIDTH = TOP_STATUS_ICON_SPACING - 12.0
 MODEL_LABEL_SCROLL_SPEED = 24.0
 MODEL_LABEL_SCROLL_PAUSE_S = 1.5
+COMPACT_TOP_STATUS_SCALE = 0.7
+COMPACT_TOP_STATUS_Y = -14.0
+COMPACT_SCENE_ZOOM = 1.15
 TOP_STATUS_DETAIL_CENTER_Y = (
     TURN_SIGNAL_CENTER_Y
     + max(FOLLOW_GAP_LANE_ICON_SIZE, LFA_STATUS_ICON_SIZE) * 0.5
@@ -957,7 +960,7 @@ class ClusterUiRenderer:
         profile_stage = self._profile_start()
         if self._compact_panel:
             sx, sy = self.width / 1920.0, self.height / 462.0
-            rl.begin_scissor_mode(round(580 * sx), round(150 * sy), round(760 * sx), round(312 * sy))
+            rl.begin_scissor_mode(round(560 * sx), round(125 * sy), round(800 * sx), round(337 * sy))
         try:
             self._draw_scene(scene, state)
         finally:
@@ -976,7 +979,7 @@ class ClusterUiRenderer:
             "speed": (250.0, 240.0, 0.9, SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y),
             "gear": (1660.0, 240.0, 0.62, GEAR_STATUS_CENTER_X, GEAR_STATUS_CENTER_Y),
             "status": (960.0, 16.0, 0.7, 960.0, 0.0),
-            "top_status": (960.0, -14.0, 0.7, 960.0, 0.0),
+            "top_status": (960.0, COMPACT_TOP_STATUS_Y, COMPACT_TOP_STATUS_SCALE, 960.0, 0.0),
         }[region]
         vertical = DESIGN_HEIGHT / 462.0
         rl.rl_push_matrix()
@@ -1689,11 +1692,14 @@ class ClusterUiRenderer:
         return data
 
     def _draw_scene(self, scene: ClusterScene, state: ClusterUiState) -> None:
+        fovy_deg = scene.camera.fovy_deg
+        if self._compact_panel:
+            fovy_deg = math.degrees(2.0 * math.atan(math.tan(math.radians(fovy_deg) * 0.5) / COMPACT_SCENE_ZOOM))
         camera = rl.Camera3D(
             vec3(scene.camera.position),
             vec3(scene.camera.target),
             rl.Vector3(0.0, 0.0, 1.0),
-            scene.camera.fovy_deg,
+            fovy_deg,
             rl.CameraProjection.CAMERA_PERSPECTIVE,
         )
         profile_stage = self._profile_start()
@@ -2638,11 +2644,12 @@ class ClusterUiRenderer:
         memory_percent = stats.memory_used_percent
         left_x = 310.0 if self._compact_panel else TOP_SYSTEM_METRIC_LEFT_X
         right_x = 1610.0 if self._compact_panel else TOP_SYSTEM_METRIC_RIGHT_X
+        metric_y = TOP_SYSTEM_METRIC_Y - (30.0 * DESIGN_HEIGHT / 462.0 if self._compact_panel else 0.0)
         if temperature is not None:
             self._draw_text(
                 f"TEMP {temperature:.0f}C",
                 right_x,
-                TOP_SYSTEM_METRIC_Y,
+                metric_y,
                 TOP_SYSTEM_METRIC_FONT_SIZE,
                 theme.text,
                 anchor="center",
@@ -2651,7 +2658,7 @@ class ClusterUiRenderer:
             self._draw_text(
                 f"MEM {memory_percent:.0f}%",
                 left_x,
-                TOP_SYSTEM_METRIC_Y,
+                metric_y,
                 TOP_SYSTEM_METRIC_FONT_SIZE,
                 theme.text,
                 anchor="center",
@@ -2661,7 +2668,7 @@ class ClusterUiRenderer:
             self._draw_text(
                 f"CPU {cpu_percent:.0f}%",
                 left_x,
-                TOP_SYSTEM_METRIC_Y + TOP_SYSTEM_METRIC_LINE_GAP,
+                metric_y + TOP_SYSTEM_METRIC_LINE_GAP,
                 TOP_SYSTEM_METRIC_FONT_SIZE,
                 theme.text,
                 anchor="center",
@@ -2698,10 +2705,19 @@ class ClusterUiRenderer:
 
         left = center_x - MODEL_LABEL_MAX_WIDTH * 0.5
         top = center_y - text_height * 0.5
+        right = left + MODEL_LABEL_MAX_WIDTH
+        bottom = top + text_height + size * TEXT_VERTICAL_CENTER_OFFSET_RATIO
         sx, sy = self.width / DESIGN_WIDTH, self.height / DESIGN_HEIGHT
+        if self._compact_panel:
+            # Scissor coordinates are framebuffer pixels, not transformed HUD coordinates.
+            left = DESIGN_WIDTH * 0.5 + (left - DESIGN_WIDTH * 0.5) * COMPACT_TOP_STATUS_SCALE
+            right = DESIGN_WIDTH * 0.5 + (right - DESIGN_WIDTH * 0.5) * COMPACT_TOP_STATUS_SCALE
+            top = COMPACT_TOP_STATUS_Y + top * COMPACT_TOP_STATUS_SCALE
+            bottom = COMPACT_TOP_STATUS_Y + bottom * COMPACT_TOP_STATUS_SCALE
+            sy = self.height / 462.0
         clip_left, clip_top = math.floor(left * sx), math.floor(top * sy)
-        clip_right = math.ceil((left + MODEL_LABEL_MAX_WIDTH) * sx)
-        clip_bottom = math.ceil((top + text_height + size * TEXT_VERTICAL_CENTER_OFFSET_RATIO) * sy)
+        clip_right = math.ceil(right * sx)
+        clip_bottom = math.ceil(bottom * sy)
         rl.begin_scissor_mode(clip_left, clip_top, clip_right - clip_left, clip_bottom - clip_top)
         try:
             self._draw_text(text, left - offset, center_y, size, color)

@@ -1,4 +1,5 @@
 import ast
+import math
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,7 +42,8 @@ class Matrix:
 def region_method(matrix):
     constants = [node for node in TREE.body if isinstance(node, ast.Assign)
                  and isinstance(node.targets[0], ast.Name)
-                 and node.targets[0].id in ("SPEED_VALUE_CENTER_X", "SPEED_VALUE_CENTER_Y", "GEAR_STATUS_CENTER_X", "GEAR_STATUS_CENTER_Y")]
+                 and node.targets[0].id in ("SPEED_VALUE_CENTER_X", "SPEED_VALUE_CENTER_Y", "GEAR_STATUS_CENTER_X", "GEAR_STATUS_CENTER_Y",
+                                           "COMPACT_TOP_STATUS_SCALE", "COMPACT_TOP_STATUS_Y")]
     method = next(node for node in RENDERER.body if isinstance(node, ast.FunctionDef) and node.name == "_panel_region")
     namespace = {"rl": matrix, "contextmanager": contextmanager, "DESIGN_HEIGHT": 720}
     module = ast.Module(body=[
@@ -152,7 +154,22 @@ def test_road_clipping_is_compact_only_and_cleans_up(compact):
     with pytest.raises(RuntimeError, match="draw failed"):
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "<road clipping>", "exec"),
              {"self": renderer, "rl": rl, "scene": None, "state": None})
-    assert events == ([(580, 150, 760, 312), "draw", "end"] if compact else ["draw"])
+    assert events == ([(560, 125, 800, 337), "draw", "end"] if compact else ["draw"])
+
+
+@pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize("fov", [30., 60., 90.])
+def test_scene_zoom_is_uniform_and_compact_only(compact, fov):
+    method = next(n for n in RENDERER.body if isinstance(n, ast.FunctionDef) and n.name == "_draw_scene")
+    constant = next(n for n in TREE.body if isinstance(n, ast.Assign)
+                    and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "COMPACT_SCENE_ZOOM")
+    namespace = {"self": SimpleNamespace(_compact_panel=compact),
+                 "scene": SimpleNamespace(camera=SimpleNamespace(fovy_deg=fov)), "math": math}
+    exec(compile(ast.Module(body=[constant, *method.body[:2]], type_ignores=[]), "<scene zoom>", "exec"), namespace)
+    magnification = math.tan(math.radians(fov) / 2) / math.tan(math.radians(namespace["fovy_deg"]) / 2)
+    assert magnification == pytest.approx(1.15 if compact else 1.)
+    camera = method.body[2].value
+    assert ast.unparse(camera.args[3]) == "fovy_deg"
 
 
 @pytest.mark.parametrize("compact", [False, True])
@@ -164,6 +181,19 @@ def test_side_metrics_move_inward_only_on_compact_panel(compact):
                  "TOP_SYSTEM_METRIC_LEFT_X": 260, "TOP_SYSTEM_METRIC_RIGHT_X": 1660}
     exec(compile(ast.Module(body=positions, type_ignores=[]), "<metric positions>", "exec"), namespace)
     assert (namespace["left_x"], namespace["right_x"]) == ((310, 1610) if compact else (260, 1660))
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_side_metrics_move_up_thirty_native_pixels_only_on_compact_panel(compact):
+    method = next(n for n in RENDERER.body if isinstance(n, ast.FunctionDef) and n.name == "_draw_system_top_metrics")
+    position = next(n for n in method.body if isinstance(n, ast.Assign)
+                    and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "metric_y")
+    namespace = {"self": SimpleNamespace(_compact_panel=compact), "TOP_SYSTEM_METRIC_Y": 100., "DESIGN_HEIGHT": 720.}
+    exec(compile(ast.Module(body=[position], type_ignores=[]), "<metric height>", "exec"), namespace)
+    assert (100. - namespace["metric_y"]) * 462. / 720. == pytest.approx(30. if compact else 0.)
+    texts = [n for n in ast.walk(method) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Attribute) and n.func.attr == "_draw_text"]
+    assert [ast.unparse(n.args[2]) for n in texts] == ["metric_y", "metric_y", "metric_y + TOP_SYSTEM_METRIC_LINE_GAP"]
 
 
 @pytest.mark.parametrize("compact", [False, True])

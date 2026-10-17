@@ -231,6 +231,7 @@ class StatusLabelTests(unittest.TestCase):
         self.ns = renderer_methods()
         self.hud = self.ns["Hud"]()
         self.hud.width, self.hud.height = 960, 360
+        self.hud._compact_panel = False
         self.hud._model_label_text = ""
         self.hud._model_label_started_at = 0.0
         self.hud._measure_text = Mock(return_value=(50.0, 30.0))
@@ -299,6 +300,32 @@ class StatusLabelTests(unittest.TestCase):
         self.assertEqual(width, math.ceil(right) - math.floor(left))
         self.assertEqual(height, math.ceil(bottom) - math.floor(top))
         self.rl.end_scissor_mode.assert_called_once()
+
+    def test_compact_model_clip_tracks_top_row_at_native_and_scaled_resolution(self):
+        self.hud._compact_panel = True
+        self.hud._measure_text.return_value = (300.0, 30.0)
+        for width, height in ((1920, 462), (960, 231)):
+            with self.subTest(width=width, height=height):
+                self.hud.width, self.hud.height = width, height
+                self.draw_name("Long model name", 10.0)
+                x, y, w, h = self.rl.begin_scissor_mode.call_args.args
+                scale = self.ns["COMPACT_TOP_STATUS_SCALE"]
+                center = 960 + (self.ns["CHESTNUT_ICON_CENTER_X"] - 960) * scale
+                half_width = self.ns["MODEL_LABEL_MAX_WIDTH"] * scale / 2
+                top = self.ns["COMPACT_TOP_STATUS_Y"] + (self.ns["TOP_STATUS_DETAIL_CENTER_Y"] - 15) * scale
+                bottom = top + (30 + self.ns["TOP_STATUS_LABEL_FONT_SIZE"] * self.ns["TEXT_VERTICAL_CENTER_OFFSET_RATIO"]) * scale
+                self.assertEqual(x, math.floor((center - half_width) * width / 1920))
+                self.assertEqual(w, math.ceil((center + half_width) * width / 1920) - x)
+                self.assertEqual(y, math.floor(top * height / 462))
+                self.assertEqual(h, math.ceil(bottom * height / 462) - y)
+
+    def test_compact_short_name_remains_centered_beneath_gpu(self):
+        self.hud._compact_panel = True
+        for name in ("stock", "TT", "loading"):
+            call = self.draw_name(name, 10.)
+            self.assertEqual(call.args[1], self.ns["CHESTNUT_ICON_CENTER_X"])
+            self.assertEqual(call.kwargs["anchor"], "center")
+        self.rl.begin_scissor_mode.assert_not_called()
 
     def test_acc_speed_and_placeholder_share_size_and_height(self):
         self.hud._b_gear_standby = Mock(return_value=False)

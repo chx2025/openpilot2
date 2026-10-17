@@ -36,14 +36,21 @@ The 9.2-inch panel has its own HUD placement, not a vertically squeezed
 12.3-inch layout: speed and gear are centered at (250, 240) and (1660, 240)
 in its native 1920x462 canvas. Text/icons retain their aspect ratios; the
 central status row is uniformly reduced and inset, while the road/vehicle
-layer is clipped to the central area below it. The system metrics stay in
-the side panels, with MEM/CPU centered at x=310 and TEMP at x=1610 to
-clear the background artwork. Speed digits and gear text are 20% larger
+layer is clipped to the central area below it (native x=560–1360,
+y=125–462), near the side-frame inner edges and below the top-row labels.
+The compact 3D camera applies a uniform 1.15x perspective zoom to roads and
+vehicles without stretching their proportions; projected radar labels use
+the same camera. The system metrics stay in
+the side panels, with MEM/CPU centered at x=310 and TEMP at x=1610 and
+all three metrics raised 30 native pixels to clear the background artwork.
+Speed digits and gear text are 20% larger
 than the initial 9.2-inch layout; their centers and the km/h font size are
 unchanged relative to this positioning. The top icon row (including turn
 signals and GPU/model information) is shifted up 30 native pixels without
 moving AUTO HOLD or the ACC-off wheel/angle animation. The latter uses the compact central
 layout. The 12.3-inch HUD coordinates, sizes and road rendering are unchanged.
+The GPU model-name scrolling clip follows the compact top-row transform,
+keeping long labels inside the area directly below the GPU icon.
 When valid, live `carStateExt.autoBrakeHoldActive` reports actual brake hold
 onroad, `AUTO HOLD` appears below the top icon/detail row. Its text alternates
 red and green every half-second, including when ACC is off or a debug view
