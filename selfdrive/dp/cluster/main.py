@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import gc
+import os
+from contextlib import ExitStack
 from dataclasses import replace
 import signal
 import sys
@@ -740,6 +742,8 @@ def run_demo(
     h264_render_nv12_buffer: bytearray | None = None
     h264_render_nv12_layout: tuple[int, int, int, int, int, int, bool] | None = None
     h264_dmabuf_nv12_input = False
+    heartbeat_path = os.environ.get("CLUSTER_HEARTBEAT_PATH")
+    next_heartbeat = 0.0
 
     if hud_output_gate_param_reader is not None and not hud_output_gate_param_reader.allowed():
         print(
@@ -1129,6 +1133,13 @@ def run_demo(
             )
             if usb_display is not None and not usb_frame_ready:
                 usb_dropped_frames += 1
+            if heartbeat_path and usb_frame_ready and time.monotonic() >= next_heartbeat:
+                progress_time = time.monotonic()
+                heartbeat = Path(heartbeat_path)
+                pending = heartbeat.with_suffix(".tmp")
+                pending.write_text(str(progress_time), encoding="ascii")
+                pending.replace(heartbeat)
+                next_heartbeat = progress_time + 1.0
             if usb_display is not None and not is_offroad and adaptive_fps.update(
                 dropped=not usb_frame_ready,
                 now=time.perf_counter(),
@@ -1341,20 +1352,13 @@ def run_demo(
                 gc.callbacks.remove(gc_hook)
             except ValueError:
                 pass
-        if h264_pipeline is not None:
-            renderer.release_nv12_dmabuf_output()
-            h264_pipeline.close()
-        if usb_pipeline is not None:
-            usb_pipeline.close()
-        if controller is not None:
-            controller.close()
-        if route_source is not None:
-            route_source.close()
-        if live_source is not None:
-            live_source.close()
-        if usb_display is not None:
-            usb_display.close()
-        renderer.close()
+        with ExitStack() as cleanup:
+            cleanup.callback(renderer.close)
+            for resource in (usb_display, live_source, route_source, controller, usb_pipeline, h264_pipeline):
+                if resource is not None:
+                    cleanup.callback(resource.close)
+            if h264_pipeline is not None:
+                cleanup.callback(renderer.release_nv12_dmabuf_output)
 
 
 def parse_args() -> argparse.Namespace:

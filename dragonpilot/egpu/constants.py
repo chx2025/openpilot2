@@ -135,6 +135,12 @@ P_RUNNING = "dp_egpu_running"                # BOOL  manager start | offroad  bi
 P_AUTO_DEFAULT = "dp_egpu_auto_default"     # BOOL  PERSISTENT   download + compile DEFAULT_BUNDLE by itself once (plan B)
 P_FAILED = "dp_egpu_failed"                  # BOOL  manager start | offroad  big model failed this drive -> stock modeld
 
+BIG_MODEL_TIMEOUT = 120
+PCIE_WAIT = 15
+# Includes camera connection, PCIe readiness, loading, warmup and the first real inference.
+FIRST_OUTPUT_TIMEOUT = PCIE_WAIT + BIG_MODEL_TIMEOUT + 15
+MODEL_OUTPUT_TIMEOUT = 5
+
 # pipeline states (P_STATUS["state"])
 ST_IDLE = "idle"
 ST_RESOLVING = "resolving"          # ref -> ONNX pointer

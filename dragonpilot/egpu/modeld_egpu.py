@@ -33,17 +33,15 @@ from setproctitle import setproctitle
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from dragonpilot.egpu.bundles import get_active_bundle, active_ready
-from dragonpilot.egpu.constants import P_LOADING, P_RUNNING, P_FAILED, model_root, model_pkl_name, warp_pkl_name
+from dragonpilot.egpu.constants import P_LOADING, P_RUNNING, P_FAILED, BIG_MODEL_TIMEOUT, PCIE_WAIT, model_root, model_pkl_name, warp_pkl_name
 
 PROCESS_NAME = "dragonpilot.egpu.modeld_egpu"
 # s. sunnypilot: 60. The UT3G author measured 71.5-75.6 s on a C3XL with a UT3G (sp egpu_loader.py
 # C3XL_MODEL_LOAD_TIMEOUT = 120, "bounded 44.42 s margin for cold starts and USB scheduling variance")
-BIG_MODEL_TIMEOUT = 120
-PCIE_WAIT = 15  # s, before tinygrad opens the eGPU (zoompilot waits 10 s before a chestnut build)
 
 
 def _fail(params: Params, why: str) -> None:
-  cloudlog.error(f"egpu: big model failed: {why}")
+  cloudlog.exception(f"egpu: big model failed: {why}")
   params.put_bool(P_FAILED, True, block=True)
   params.put_bool(P_RUNNING, False)
   params.put_bool(P_LOADING, False)
@@ -59,7 +57,6 @@ def make_loader(params: Params):
     warp_pkl = os.path.join(model_root(), warp_pkl_name(cam_w, cam_h))
     tg_env.patch_fetch_fw()
 
-    params.put_bool(P_LOADING, True)
     from dragonpilot.egpu.usb import wait_pcie_link
     up, ltssm = wait_pcie_link(PCIE_WAIT)
     if not up:
@@ -83,8 +80,6 @@ def make_loader(params: Params):
     if 'model' not in result:
       raise RuntimeError(f"load failed: {result.get('error', f'timeout {BIG_MODEL_TIMEOUT}s')}")
 
-    params.put_bool(P_LOADING, False)
-    params.put_bool(P_RUNNING, True)
     return result['model']
   return loader
 
@@ -94,6 +89,7 @@ def main():
   cloudlog.bind(daemon="modeld_egpu")
   params = Params()
   params.put_bool(P_RUNNING, False)
+  params.put_bool(P_LOADING, True, block=True)
   try:
     from openpilot.selfdrive.modeld import modeld as dp_modeld
     dp_modeld.main(egpu_loader=make_loader(params))

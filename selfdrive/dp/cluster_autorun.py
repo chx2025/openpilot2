@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -15,10 +16,12 @@ CLUSTER_DIR = Path(__file__).resolve().parent / "cluster"
 # so it never takes the panel away from the openpilot UI. There is no CPU fallback:
 # Mesa llvmpipe only reaches ~1-2 FPS on device, which is unusable.
 RAYLIB_BACKEND = "comma"
-# Logging is off by default; set CLUSTER_LOG_PATH=/tmp/cluster.log to debug.
+DEFAULT_LOG_PATH = "/tmp/cluster.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 RESTART_DELAY_S = 5.0
 DEFAULT_FPS = "20"
+STARTUP_TIMEOUT_S = 90.0
+HEARTBEAT_TIMEOUT_S = 30.0
 
 
 def cluster_env() -> dict[str, str]:
@@ -50,23 +53,41 @@ def cluster_cmd() -> list[str]:
 
 
 def _open_log():
-    log_path = os.environ.get("CLUSTER_LOG_PATH", "").strip()
-    if not log_path:
-        return None
+    log_path = os.environ.get("CLUSTER_LOG_PATH", "").strip() or DEFAULT_LOG_PATH
     path = Path(log_path)
     try:
         if path.exists() and path.stat().st_size > LOG_MAX_BYTES:
             path.replace(path.with_name(path.name + ".1"))
         return path.open("a", buffering=1)
-    except OSError:
+    except OSError as exc:
+        print(f"Unable to open cluster log {path}: {exc}", file=sys.stderr, flush=True)
         return None
 
 
 def _log(log_file, message: str) -> None:
-    if log_file is None:
-        return
     line = f"[cluster_autorun {time.strftime('%Y-%m-%d %H:%M:%S')}] {message}"
-    log_file.write(line + "\n")
+    print(line, file=log_file or sys.stderr, flush=True)
+
+
+def stop_child(child: subprocess.Popen) -> None:
+    if child.poll() is not None:
+        return
+    child.terminate()
+    try:
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait(timeout=5)
+
+
+def heartbeat_expired(path: Path, started: float, now: float) -> bool:
+    try:
+        last_progress = float(path.read_text(encoding="ascii"))
+    except FileNotFoundError:
+        return now - started >= STARTUP_TIMEOUT_S
+    except ValueError:
+        return now - started >= STARTUP_TIMEOUT_S
+    return now - max(started, last_progress) >= HEARTBEAT_TIMEOUT_S
 
 
 def main() -> None:
@@ -80,35 +101,41 @@ def main() -> None:
     def _stop(signum, _frame):
         nonlocal stopping
         stopping = True
-        if child is not None and child.poll() is None:
-            child.terminate()
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
     _log(log_file, f"starting cluster HUD with live openpilot data (raylib backend={env.get('RAYLIB_BACKEND')})")
-    while not stopping:
-        output = log_file if log_file is not None else subprocess.DEVNULL
-        child = subprocess.Popen(cluster_cmd(), env=env, stdout=output, stderr=subprocess.STDOUT)
-        try:
-            returncode = child.wait()
-        except KeyboardInterrupt:
-            stopping = True
-            child.terminate()
-            returncode = child.wait()
-        if stopping:
-            break
-        _log(log_file, f"cluster exited with code {returncode}, restarting in {RESTART_DELAY_S:.0f}s")
-        deadline = time.monotonic() + RESTART_DELAY_S
-        while not stopping and time.monotonic() < deadline:
-            time.sleep(0.2)
-
-    if child is not None and child.poll() is None:
-        try:
-            child.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            child.kill()
-    _log(log_file, "stopped")
+    try:
+        with tempfile.TemporaryDirectory(prefix="cluster-supervisor-") as temp_dir:
+            heartbeat = Path(temp_dir) / "heartbeat"
+            env["CLUSTER_HEARTBEAT_PATH"] = str(heartbeat)
+            while not stopping:
+                heartbeat.unlink(missing_ok=True)
+                child = subprocess.Popen(cluster_cmd(), env=env, stdout=log_file, stderr=subprocess.STDOUT)
+                started = time.monotonic()
+                while not stopping and child.poll() is None:
+                    if heartbeat_expired(heartbeat, started, time.monotonic()):
+                        _log(log_file, "HUD progress timed out; terminating and restarting")
+                        break
+                    if log_file is not None and os.fstat(log_file.fileno()).st_size > LOG_MAX_BYTES:
+                        log_file.seek(0)
+                        log_file.truncate()
+                        _log(log_file, "log size limit reached; older output discarded")
+                    time.sleep(0.5)
+                stop_child(child)
+                if stopping:
+                    break
+                _log(log_file, f"cluster exited with code {child.returncode}, restarting in {RESTART_DELAY_S:.0f}s")
+                deadline = time.monotonic() + RESTART_DELAY_S
+                while not stopping and time.monotonic() < deadline:
+                    time.sleep(0.2)
+    finally:
+        if child is not None:
+            stop_child(child)
+        _log(log_file, "stopped")
+        if log_file is not None:
+            log_file.close()
 
 
 if __name__ == "__main__":

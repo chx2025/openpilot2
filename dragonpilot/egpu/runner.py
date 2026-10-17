@@ -21,7 +21,7 @@ import pickle
 
 import numpy as np
 from tinygrad.tensor import Tensor
-from tinygrad.device import Buffer
+from tinygrad.device import Buffer, Device
 from tinygrad.dtype import _from_np_dtype
 from tinygrad.helpers import round_up
 from tinygrad.uop.ops import UOp
@@ -105,6 +105,9 @@ class EgpuModelState:
         self.outputs[nxt] = input_view(state._buffer(), state.shape, state.dtype, 0)
     self.parser = Parser()
     self.prev_desire = np.zeros(ModelConstants.DESIRE_LEN, dtype=np.float32)
+    self.stage = "initialized"
+    self._warming_up = True
+    self._first_frame = True
 
   def _pack(self) -> None:
     """one host buffer -> one upload per frame (sunnypilot-master pack_inputs), views as the JIT's inputs"""
@@ -125,14 +128,32 @@ class EgpuModelState:
     self.inputs.update(self.state)
 
   def run(self, bufs, transforms: dict[str, np.ndarray], inputs: dict[str, np.ndarray], prepare_only: bool = False) -> dict[str, np.ndarray]:
+    try:
+      result = self._run(bufs, transforms, inputs)
+    except Exception:
+      cloudlog.exception(f"egpu: inference failed during {self.stage} (warmup={self._warming_up})")
+      raise
+    if not self._warming_up:
+      self._first_frame = False
+    return result
+
+  def _set_stage(self, stage: str) -> None:
+    self.stage = stage
+    if not self._warming_up and self._first_frame:
+      cloudlog.warning(f"egpu: first camera frame: {stage}")
+
+  def _run(self, bufs, transforms: dict[str, np.ndarray], inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     # prepare_only ignored: history lives in the JIT, every frame must go through it (as upstream's newer modeld)
     for i, key in enumerate(VISION_INPUTS):
+      self._set_stage(f"{key} camera mapping")
       data = bufs[key].data if hasattr(bufs[key], 'data') else bufs[key]
       ptr = np.frombuffer(data, dtype=np.uint8).ctypes.data
       if (key, ptr) not in self._blob_cache:  # ring buffer of camera buffers: one tensor per slot
         self._blob_cache[(key, ptr)] = Tensor.from_blob(ptr, (self.frame_size,), dtype='uint8', device=self.warp_device)
       self.tfm[key][:, :] = transforms[key].reshape(3, 3)
+      self._set_stage(f"{key} QCOM warp")
       warped = self.run_warp(input_frame=self._blob_cache[(key, ptr)], M_inv=self.tfm_t[key])
+      self._set_stage(f"{key} warp readback")
       self.npy[STATEFUL_FRAME][i] = warped.numpy().reshape(self.npy[STATEFUL_FRAME].shape[1:])
 
     # desire is a pulse on the rising edge, the model decides when the action is complete
@@ -143,15 +164,19 @@ class EgpuModelState:
     self.npy['traffic_convention'][...] = np.asarray(inputs['traffic_convention']).reshape(self.npy['traffic_convention'].shape)
     self.npy['action_t'][...] = np.asarray(inputs['action_t']).reshape(self.npy['action_t'].shape)
 
+    self._set_stage("AMD input upload")
     self.input_device.copy_from(self.input_host)
+    self._set_stage("AMD inference")
     self.run_model(output_buffers=self.outputs, **self.inputs)
 
+    self._set_stage("AMD output readback")
     model_output = self.outputs[DRIVING_OUTPUT].numpy().reshape(-1)
     if not np.all(np.isfinite(model_output)):
       raise RuntimeError("egpu: model output not finite")
     if self.layout == 'queued':
       self.npy['prev_feat'][...] = model_output[self.hidden].reshape(self.npy['prev_feat'].shape)
     sliced = {k: model_output[np.newaxis, v] for k, v in self.output_slices.items()}
+    self._set_stage("output parsing")
     outputs = self.parser.parse_vision_outputs(sliced)
     outputs = self.parser.parse_policy_outputs(outputs)
     if 'planplus' in outputs and 'plan' in outputs:
@@ -164,11 +189,15 @@ class EgpuModelState:
     dims = {'desire_pulse': ModelConstants.DESIRE_LEN, 'traffic_convention': 2, 'action_t': 2}
     self.run(dummy, dict.fromkeys(VISION_INPUTS, eye), {k: np.zeros(v, dtype=np.float32) for k, v in dims.items()})
     self.reset()
+    self._warming_up = False
 
   def reset(self) -> None:
     self.packed[:] = 0
     for t in self.state.values():
       t.assign(t.zeros_like()).realize()
+    # realize() enqueues the reset; finish it before handing the model to the driving thread.
+    for device in dict.fromkeys((self.model_device, self.warp_device, "NPY")):
+      Device[device].synchronize()
     self._blob_cache.clear()
     self.prev_desire[:] = 0
 

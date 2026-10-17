@@ -11,8 +11,17 @@ QCOM warp, model compilation, failover, vehicle controls and main UI are unchang
 Cluster is ported from `dev261007XL-onemiless-cluster` at
 `877c57240d277c4c0e279451b905e7cc40f05cc7`, including the latest speed-limit
 icon aspect-ratio fix, USB output, native H.264 encoding, settings, radar/lead
-indicators and lead-departure alerts.
+indicators. Lead-departure detection and the `READY TO GO` reminder have been
+removed; normal radar/lead visualization is unchanged. This removal alone does
+not establish the cause of cluster freezes.
 Manager autorun remains 20 FPS (offroad rendering remains 1 FPS).
+The supervisor retains bounded diagnostic output in `/tmp/cluster.log`
+(`CLUSTER_LOG_PATH` overrides it). HUD startup has a 90-second grace period;
+after the first progress heartbeat, 30 seconds without render/output capacity
+triggers a restart. Shutdown sends TERM, waits five seconds, then escalates to
+KILL with another bounded wait. This also recovers processes stuck during USB
+replug or cleanup, rather than waiting only for an exit. Hardware/driver stalls
+in uninterruptible kernel sleep still require separate diagnosis.
 The CPU camera accelerator, model-stall instrumentation and other sunnypilot
 runtime changes are not included.
 

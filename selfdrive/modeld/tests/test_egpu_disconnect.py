@@ -27,6 +27,7 @@ def test_disconnect_failure(onroad, present, loading, running, failed, expected)
   writes = []
   errors = []
   refreshed = []
+  progress_checks = []
   params = SimpleNamespace(get_bool=lambda key: values.get(key, False), put_bool=lambda *args, **kwargs: writes.append((args, kwargs)), get=lambda key: None)
   manager = SimpleNamespace(
     params=params,
@@ -35,6 +36,7 @@ def test_disconnect_failure(onroad, present, loading, running, failed, expected)
     validate_active=lambda: None,
     auto_default=lambda: None,
     process_download_request=lambda: None,
+    check_model_progress=lambda: progress_checks.append(True),
   )
   logger = SimpleNamespace(error=errors.append)
   namespace = {
@@ -52,6 +54,7 @@ def test_disconnect_failure(onroad, present, loading, running, failed, expected)
     assert writes == []
     assert errors == []
   assert bool(refreshed) == (not onroad)
+  assert bool(progress_checks) == onroad
 
 
 def test_failure_latches_stock_until_next_drive():

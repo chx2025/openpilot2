@@ -25,6 +25,7 @@ import sys
 import time
 from pathlib import Path
 
+import cereal.messaging as messaging
 from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
@@ -35,7 +36,7 @@ from dragonpilot.egpu.constants import (MANIFEST_CACHE_TIMEOUT_S, CAMERA_CONFIGS
                                         P_STATUS, P_DELETE_REF, P_CLEAR_CACHE, P_ENABLED, P_SEEN, P_AUTO_DEFAULT, DEFAULT_REF, AUTO_RETRY_S,
                                         ST_IDLE, ST_RESOLVING, ST_DOWNLOADING,
                                         ST_COMPILING_WARP, ST_COMPILING, ST_DONE, ST_FAILED, ST_CANCELLED, ST_WAITING_EGPU,
-                                        model_root, onnx_path, model_pkl_name, warp_pkl_name)
+                                        FIRST_OUTPUT_TIMEOUT, MODEL_OUTPUT_TIMEOUT, model_root, onnx_path, model_pkl_name, warp_pkl_name)
 from dragonpilot.egpu.usb import egpu_present, egpu_rom_present, wait_pcie_link
 
 BASEDIR = EGPU_DIR.parent.parent
@@ -58,6 +59,36 @@ class EgpuModelManager:
     self._rom_logged = False
     self._auto_next = 0.0
     self.compile_python = sys.executable
+    self.sm = messaging.SubMaster(["modelV2", "modelExt"])
+    self._model_wait_started: float | None = None
+    self._last_model_output: float | None = None
+
+  def check_model_progress(self) -> None:
+    self.sm.update(0)
+    loading = self.params.get_bool(P_LOADING)
+    running = self.params.get_bool(P_RUNNING)
+    if self.params.get_bool(P_FAILED) or not (loading or running):
+      self._model_wait_started = None
+      self._last_model_output = None
+      return
+
+    now = time.monotonic()
+    if self._model_wait_started is None:
+      self._model_wait_started = now
+    if running:
+      if self._last_model_output is None:
+        self._last_model_output = now
+      if self.sm["modelExt"].bigModel:
+        output_ts = min(self.sm.logMonoTime["modelV2"], self.sm.logMonoTime["modelExt"]) / 1e9
+        self._last_model_output = max(self._last_model_output, output_ts)
+      expired = now - self._last_model_output >= MODEL_OUTPUT_TIMEOUT
+      reason = f"no big-model output for {MODEL_OUTPUT_TIMEOUT}s"
+    else:
+      expired = now - self._model_wait_started >= FIRST_OUTPUT_TIMEOUT
+      reason = f"no first big-model output within {FIRST_OUTPUT_TIMEOUT}s"
+    if expired:
+      cloudlog.error(f"egpu: {reason}; failing this drive for stock fallback")
+      self.params.put_bool(P_FAILED, True, block=True)
 
   # ------------------------------------------------------------------ status
   def _set_status(self, force: bool = False, **kw) -> None:
@@ -327,8 +358,11 @@ class EgpuModelManager:
       if not present and (self.params.get_bool(P_LOADING) or self.params.get_bool(P_RUNNING)) and not self.params.get_bool(P_FAILED):
         cloudlog.error("egpu: USB disappeared while the big model was loading/running; failing this drive for stock fallback")
         self.params.put_bool(P_FAILED, True, block=True)
+      self.check_model_progress()
       return
 
+    self._model_wait_started = None
+    self._last_model_output = None
     self.refresh_catalog()
     self.validate_active()
     if (ref := self.params.get(P_DELETE_REF)) is not None:

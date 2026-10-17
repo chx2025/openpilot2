@@ -2279,7 +2279,6 @@ class ClusterUiRenderer:
                     DEBUG_PLOT_FULL_H,
                 )
                 self._profile_add("hud.debug_plot_full", profile_stage)
-                self._draw_departure_reminder(state)
                 return
 
             profile_stage = self._profile_start()
@@ -2325,18 +2324,10 @@ class ClusterUiRenderer:
                 profile_stage = self._profile_start()
                 self._draw_route_overlay(state.route_overlay)
                 self._profile_add("hud.route_overlay", profile_stage)
-            self._draw_departure_reminder(state)
         finally:
             profile_stage = self._profile_start()
             rl.rl_pop_matrix()
             self._profile_add("hud.pop_matrix", profile_stage)
-
-    def _draw_departure_reminder(self, state: ClusterUiState) -> None:
-        if not state.departure_reminder or state.wheel_critical:
-            return
-        top_y = TOP_STATUS_DETAIL_CENTER_Y + TOP_STATUS_DETAIL_FONT_SIZE * 0.5 + 16.0
-        self._rounded_rect(DESIGN_WIDTH * 0.5 - 210.0, top_y, 420.0, 64.0, 12.0, (12, 55, 32), GREEN, 2.0)
-        self._draw_text("READY TO GO", DESIGN_WIDTH * 0.5, top_y + 32.0, 30.0, WHITE, anchor="center")
 
     def _draw_debug_plot(
         self,

@@ -1385,6 +1385,8 @@ class H264UsbPipeline:
                 pass
         if self._sender_thread is not None:
             self._sender_thread.join(timeout=3.0)
+            if self._sender_thread.is_alive():
+                raise RuntimeError("H264 USB sender did not stop; refusing concurrent stream teardown")
 
         if self._stream_started:
             try:

@@ -28,6 +28,7 @@ from openpilot.selfdrive.modeld.constants import ModelConstants, Plan
 from openpilot.selfdrive.modeld.helpers import usbgpu_present, modeld_pkl_path, get_tg_input_devices, use_builtin_usbgpu
 from dragonpilot.selfdrive.controls.lib.road_edge_detector import RoadEdgeDetector
 from dragonpilot import jetlink_adapter
+from dragonpilot.egpu.constants import P_LOADING, P_RUNNING
 
 LITE = os.getenv("LITE") is not None
 
@@ -209,7 +210,7 @@ def main(demo=False, egpu_loader=None):
   params.put_bool("UsbGpuCompiled", _compiled)
 
   if EGPU:
-    # dp - egpu (v5.2): realtime only once the model is loaded, below. tinygrad's host waits for the eGPU
+    # dp - egpu: realtime only after the first camera frame is published. tinygrad's host waits for the eGPU
     # (support/hcq2.py hcq_fence, "TODO: timeout?") spin with no timeout and no sleep; on SCHED_FIFO 54 / core 7
     # a GPU that never answers starves the loader's own timeout on the same core: "loading" forever, no error
     pass
@@ -250,7 +251,6 @@ def main(demo=False, egpu_loader=None):
     # dp - egpu: the eGPU bundle is the only model in this process (see main's docstring)
     small_model = None
     model = egpu_loader(vipc_client_main.width, vipc_client_main.height)
-    config_realtime_process(7, 54)  # dp - egpu: after the load (see above); sunnypilot sets it before
   else:
     small_model = ModelState(vipc_client_main.width, vipc_client_main.height, USBGPU)
     model = small_model
@@ -450,6 +450,12 @@ def main(demo=False, egpu_loader=None):
       pm.send('drivingModelData', drivingdata_send)
       pm.send('cameraOdometry', posenet_send)
       pm.send('modelExt', model_ext_send)
+      if EGPU and run_count == 1:
+        # The first real camera mapping and inference must also finish outside FIFO.
+        config_realtime_process(7, 54)
+        params.put_bool(P_RUNNING, True, block=True)
+        params.put_bool(P_LOADING, False, block=True)
+        cloudlog.warning("egpu: first camera frame published, big model running")
     last_vipc_frame_id = meta_main.frame_id
 
 

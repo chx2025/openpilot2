@@ -55,6 +55,17 @@ v2 改成**下載模型的 onnx、在車上自己編譯一次**，warp 永遠編
 fallback 啟動的 stock modeld 會讀取 `dp_egpu_failed`，強制停用內建 USB 大模型與 Jetlink attach，避免 Chestnut 已重插時再次載入大模型。未失敗時保留原有內建 USB 模型選擇。
 回歸測試：`pytest selfdrive/modeld/tests/test_egpu_disconnect.py`。桌上測試不等同道路安全驗證。
 
+### dpegpu00-cluster：首次相機推論與停輸出保護
+
+2026-10-17 的 CTV3M 試車曾在載入與 dummy 暖機完成後、第一筆實際模型輸出之前報 `NPY hang detected`；後一次啟動則連續輸出約 32 分鐘。此錯誤是同步等待逾時的表徵，現有日誌不足以判定是 AMD、QCOM 或主機緩衝區的底層根因，也未記錄到該次 USB 消失。
+
+- 暖機重設 hidden state 後，明確同步 AMD、warp 裝置及 NPY，完成已排入的工作後才釋放 dummy 相機映射、交給主執行緒。
+- 第一張真實相機畫面的映射、warp、推論及發布完成後，才升為 FIFO 並設定 `dp_egpu_running`；等待相機、載入與首次推論期間保持 `dp_egpu_loading`，避免「已載入」被誤標為「正在正常輸出」。
+- `egpu_manager` 獨立監看 `modelV2` 與大模型 `modelExt` 的時間戳：啟動後 150 秒仍無首筆發布，或 running 後任一輸出停滯至少 5 秒，即明確記錄錯誤、同步設定本趟失敗，走既有單向小模型 fallback。這不依賴 USB 消失或卡住的 modeld 自救；監測仍受 1 Hz 輪詢影響，不代表允許停輸出期間繼續控制。
+- 首張真實相機推論記錄 camera mapping、QCOM warp／readback、AMD upload／inference／readback 與解析階段；例外保留階段及完整 traceback，不靜默重試或自動切回大模型。
+
+回歸測試：`pytest selfdrive/modeld/tests/test_egpu_startup.py selfdrive/modeld/tests/test_egpu_disconnect.py`。這些修正補上初始化交接與失敗處理缺口，不等同已根治底層 `NPY hang`；接著 Chestnut 的冷開機、首次真實影像及斷線 fallback 仍需在裝置驗證。
+
 編譯結果的快取鍵含 tinygrad ref（`tg9cd40014v1`）：之後若更新隨附 tinygrad，舊編譯檔自動作廢、使用中的模型自動重編。
 
 ---
