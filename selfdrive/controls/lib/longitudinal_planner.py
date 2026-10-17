@@ -20,8 +20,10 @@ from dragonpilot.selfdrive.controls.lib.ocm import OCM
 from dragonpilot.selfdrive.controls.lib.aem import AEM
 from dragonpilot.selfdrive.controls.lib.apm import APM
 
-A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
-A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+#A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
+#A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+A_CRUISE_MAX_BP = [0., 2.77, 5.55, 8.33, 11.11, 13.89, 16.6, 19.4, 22.22, 25, 27.78, 33.33]
+A_CRUISE_MAX_VALS = [1.10, 0.9, 0.80, 0.65, 0.50, 0.40, 0.35, 0.35, 0.35, 0.33, 0.31, 0.29]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD_ACC = 0.4   # mode=='acc' 使用，維持原廠值，行為不變
 # mode=='blended'(e2e) 且 AEM「停用」時的固定門檻。獨立常數，與 aem.py 的
