@@ -209,6 +209,7 @@ class ClusterUiState:
     surround_view_active: bool
     lanes: tuple[LaneMarking, ...]
     experimental_mode: bool | None = None
+    auto_brake_hold_active: bool = False
     wheel_critical: bool = False
     cruise_available: bool | None = None
     camera_view_mode: int = 0

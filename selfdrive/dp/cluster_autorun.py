@@ -9,6 +9,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from openpilot.selfdrive.dp.cluster.cluster_config import CLUSTER_DISPLAY_MODE_PARAM, CLUSTER_DISPLAY_PRODUCT_IDS
+
 CLUSTER_DIR = Path(__file__).resolve().parent / "cluster"
 # Like CarrotPilot, render on the Adreno GPU through comma-deps-raylib's DRM "comma"
 # backend. In USB output mode the HUD only draws into render textures and never calls
@@ -19,7 +21,7 @@ RAYLIB_BACKEND = "comma"
 DEFAULT_LOG_PATH = "/tmp/cluster.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
 RESTART_DELAY_S = 5.0
-DEFAULT_FPS = "20"
+DEFAULT_FPS = "25"
 STARTUP_TIMEOUT_S = 90.0
 HEARTBEAT_TIMEOUT_S = 30.0
 
@@ -31,16 +33,22 @@ def cluster_env() -> dict[str, str]:
 
 
 def cluster_fps() -> str:
-    # Keep the autorun HUD at the same 20 FPS as the renderer/encoder defaults.
+    # Keep the autorun HUD at the same 25 FPS as the renderer/encoder defaults.
     return os.environ.get("CLUSTER_FPS", "").strip() or DEFAULT_FPS
 
 
-def cluster_cmd() -> list[str]:
+def cluster_cmd(product_id: int) -> list[str]:
+    if product_id not in CLUSTER_DISPLAY_PRODUCT_IDS.values():
+        raise ValueError(f"Unsupported cluster USB product ID: {product_id:#06x}")
     return [
         sys.executable,
         str(CLUSTER_DIR / "main.py"),
         "--input",
         "live",
+        "--output",
+        "usb",
+        "--usb-product-id",
+        hex(product_id),
         "--fps",
         cluster_fps(),
         "--usb-codec",
@@ -91,6 +99,13 @@ def heartbeat_expired(path: Path, started: float, now: float) -> bool:
 
 
 def main() -> None:
+    from openpilot.common.params import Params
+
+    params = Params()
+
+    def selected_product_id() -> int | None:
+        return CLUSTER_DISPLAY_PRODUCT_IDS.get(int(params.get(CLUSTER_DISPLAY_MODE_PARAM) or 0))
+
     # sunnypilot's manager never restarts a PythonProcess that exited, so supervise
     # the cluster here: restart on crash (e.g. screen not enumerated yet at boot).
     log_file = _open_log()
@@ -111,10 +126,18 @@ def main() -> None:
             heartbeat = Path(temp_dir) / "heartbeat"
             env["CLUSTER_HEARTBEAT_PATH"] = str(heartbeat)
             while not stopping:
+                product_id = selected_product_id()
+                if product_id is None:
+                    time.sleep(0.5)
+                    continue
                 heartbeat.unlink(missing_ok=True)
-                child = subprocess.Popen(cluster_cmd(), env=env, stdout=log_file, stderr=subprocess.STDOUT)
+                _log(log_file, f"starting selected USB display pid={product_id:#06x}")
+                child = subprocess.Popen(cluster_cmd(product_id), env=env, stdout=log_file, stderr=subprocess.STDOUT)
                 started = time.monotonic()
                 while not stopping and child.poll() is None:
+                    if selected_product_id() != product_id:
+                        _log(log_file, "display mode changed; stopping current HUD")
+                        break
                     if heartbeat_expired(heartbeat, started, time.monotonic()):
                         _log(log_file, "HUD progress timed out; terminating and restarting")
                         break
@@ -128,7 +151,7 @@ def main() -> None:
                     break
                 _log(log_file, f"cluster exited with code {child.returncode}, restarting in {RESTART_DELAY_S:.0f}s")
                 deadline = time.monotonic() + RESTART_DELAY_S
-                while not stopping and time.monotonic() < deadline:
+                while not stopping and selected_product_id() == product_id and time.monotonic() < deadline:
                     time.sleep(0.2)
     finally:
         if child is not None:

@@ -30,7 +30,7 @@ class ClusterIntegrationTests(unittest.TestCase):
         ]
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0].args[1].value, "selfdrive.dp.cluster_autorun")
-        self.assertEqual(calls[0].args[2].id, "always_run")
+        self.assertEqual(calls[0].args[2].id, "cluster")
         self.assertTrue((ROOT / "selfdrive/dp/__init__.py").is_file())
 
     def test_all_cluster_params_are_registered_and_persistent(self):

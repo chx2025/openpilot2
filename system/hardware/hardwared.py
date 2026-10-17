@@ -35,6 +35,7 @@ TEMP_TAU = 5.   # 5s time constant
 DISCONNECT_TIMEOUT = 5.  # wait 5 seconds before going offroad after disconnect so you get an alert
 PANDA_STATES_TIMEOUT = round(1000 / SERVICE_LIST['pandaStates'].frequency * 1.5)  # 1.5x the expected pandaState frequency
 ONROAD_CYCLE_TIME = 1  # seconds to wait offroad after requesting an onroad cycle
+STARTUP_OFFROAD_TIME = 3.0
 
 LITE = os.getenv("LITE")
 
@@ -167,6 +168,7 @@ def hardware_thread(end_event, hw_queue) -> None:
   startup_conditions_prev: dict[str, bool] = {}
   startup_diagnostic_prev: dict[str, bool] = {}
   startup_diagnostic_ts = 0.
+  initial_offroad_ts: float | None = None
 
   off_ts: float | None = None
   started_ts: float | None = None
@@ -313,6 +315,9 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     # ensure device is fully booted
     startup_conditions["device_booted"] = startup_conditions.get("device_booted", False) or HARDWARE.booted()
+    startup_conditions["initial_offroad_complete"] = (
+      initial_offroad_ts is not None and time.monotonic() - initial_offroad_ts >= STARTUP_OFFROAD_TIME
+    )
 
     # if the temperature enters the danger zone, go offroad to cool down
     onroad_conditions["device_temp_good"] = thermal_status < ThermalStatus.critical
@@ -435,6 +440,8 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     msg.deviceState.thermalStatus = thermal_status
     pm.send("deviceState", msg)
+    if initial_offroad_ts is None:
+      initial_offroad_ts = time.monotonic()
 
     # Log to statsd
     statlog.gauge("free_space_percent", msg.deviceState.freeSpacePercent)

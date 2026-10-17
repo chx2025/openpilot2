@@ -379,6 +379,8 @@ class Device:
     self._interactive_timeout_callbacks: list[Callable] = []
     self._prev_timed_out = False
     self._awake: bool = True
+    self._tr_display_mode: int | None = None
+    self._tr_touch_active = False
 
     self._offroad_brightness: int = BACKLIGHT_OFFROAD
     self._last_brightness: int = 0
@@ -466,7 +468,10 @@ class Device:
   # // 2 OP+ - OP enabled = Display ON
   # // 3 MAIN- - ACC MAIN on = Display OFF
   # // 4 OP- - OP enabled = Display OFF
+  # // 5 TR-9.2 / 6 TR-12.3 - External cluster; main display wakes only on touch
   def _ignition_state_ovrride(self, ignition):
+    if ui_state.dp_ui_display_mode in (5, 6):
+      return False
     # 0 stock behaviour or ignition is off
     if ui_state.dp_ui_display_mode == 0 or not ignition:
       return ignition
@@ -507,12 +512,20 @@ class Device:
     return ignition
 
   def _update_wakefulness(self):
+    tr_mode = ui_state.dp_ui_display_mode if ui_state.dp_ui_display_mode in (5, 6) else None
+    if tr_mode != self._tr_display_mode:
+      self._tr_touch_active = False
+      self._tr_display_mode = tr_mode
+
     # Handle interactive timeout
     ignition_just_turned_off = not ui_state.ignition and self._ignition
     self._ignition = ui_state.ignition
 
-    if ignition_just_turned_off or any(ev.left_down for ev in gui_app.mouse_events):
+    touched = any(ev.left_down for ev in gui_app.mouse_events)
+    if touched or (ignition_just_turned_off and tr_mode is None):
       self._reset_interactive_timeout()
+    if touched and tr_mode is not None:
+      self._tr_touch_active = True
 
     interaction_timeout = time.monotonic() > self._interaction_time
     if interaction_timeout and not self._prev_timed_out:
@@ -522,7 +535,10 @@ class Device:
 
     ignition = self._ignition_state_ovrride(ui_state.ignition)
 
-    self._set_awake(ignition or not interaction_timeout or PC)
+    if tr_mode is not None:
+      self._set_awake(self._tr_touch_active and not interaction_timeout)
+    else:
+      self._set_awake(ignition or not interaction_timeout or PC)
 
   def _set_awake(self, on: bool):
     if on != self._awake:

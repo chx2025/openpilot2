@@ -90,3 +90,62 @@ def test_startup_diagnostics_include_ignition_and_force_offroad():
   exec(code, namespace)
   assert len(events) == 3
   assert events[-1][1]["blockers"] == ["not_forced_offroad"]
+
+
+@pytest.mark.parametrize("first_offroad,now,expected", [
+  (None, 100.0, False),
+  (100.0, 100.0, False),
+  (100.0, 102.999, False),
+  (100.0, 103.0, True),
+  (100.0, 110.0, True),
+])
+def test_initial_offroad_requires_three_seconds_since_first_publication(first_offroad, now, expected):
+  tree = ast.parse((ROOT / "system/hardware/hardwared.py").read_text(encoding="utf-8"))
+  constant = next(n for n in tree.body if isinstance(n, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id == "STARTUP_OFFROAD_TIME" for t in n.targets))
+  assert ast.literal_eval(constant.value) == 3.0
+  guard = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign)
+               and any(isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant)
+                       and t.slice.value == "initial_offroad_complete" for t in n.targets))
+  namespace = {"initial_offroad_ts": first_offroad, "time": SimpleNamespace(monotonic=lambda: now),
+               "STARTUP_OFFROAD_TIME": 3.0, "startup_conditions": {}}
+  exec(compile(ast.Module(body=[guard], type_ignores=[]), "<initial offroad guard>", "exec"), namespace)
+  assert namespace["startup_conditions"]["initial_offroad_complete"] == expected
+
+
+def test_initial_offroad_clock_starts_once_after_device_state_publication():
+  tree = ast.parse((ROOT / "system/hardware/hardwared.py").read_text(encoding="utf-8"))
+  thread = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "hardware_thread")
+  loop = next(n for n in thread.body if isinstance(n, ast.While))
+  index = next(i for i, n in enumerate(loop.body) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+               and ast.unparse(n.value.func) == "pm.send")
+  clock_start = loop.body[index + 1]
+  assert ast.unparse(clock_start.test) == "initial_offroad_ts is None"
+  namespace = {"initial_offroad_ts": None, "time": SimpleNamespace(monotonic=lambda: 100.0)}
+  code = compile(ast.Module(body=[clock_start], type_ignores=[]), "<initial offroad clock>", "exec")
+  exec(code, namespace)
+  assert namespace["initial_offroad_ts"] == 100.0
+  namespace["time"] = SimpleNamespace(monotonic=lambda: 200.0)
+  exec(code, namespace)
+  assert namespace["initial_offroad_ts"] == 100.0
+
+
+@pytest.mark.parametrize("delay_complete,ignition,other_ready,forced_offroad,expected", [
+  (False, True, True, False, False),
+  (True, True, True, False, True),
+  (True, False, True, False, False),
+  (True, True, False, False, False),
+  (True, True, True, True, False),
+])
+def test_boot_delay_preserves_real_ignition_and_other_startup_gates(delay_complete, ignition, other_ready, forced_offroad, expected):
+  tree = ast.parse((ROOT / "system/hardware/hardwared.py").read_text(encoding="utf-8"))
+  thread = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "hardware_thread")
+  loop = next(n for n in thread.body if isinstance(n, ast.While))
+  index = next(i for i, n in enumerate(loop.body) if isinstance(n, ast.Assign)
+               and any(isinstance(t, ast.Name) and t.id == "should_start" for t in n.targets))
+  namespace = {
+    "dp_dev_go_off_road": forced_offroad, "onroad_conditions": {"ignition": ignition},
+    "started_ts": None, "startup_conditions": {"initial_offroad_complete": delay_complete, "other_ready": other_ready},
+  }
+  exec(compile(ast.Module(body=loop.body[index:index + 2], type_ignores=[]), "<startup decision>", "exec"), namespace)
+  assert namespace["should_start"] == expected

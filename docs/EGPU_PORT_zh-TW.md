@@ -28,6 +28,8 @@ v2 改成**下載模型的 onnx、在車上自己編譯一次**，warp 永遠編
 
 ### dpegpu00-cluster 開機診斷
 
+- `hardwared` 首次發布 offroad `deviceState` 後，至少保持 offroad 3 秒，才允許依當下點火及全部既有啟動條件進入 onroad。以 monotonic 時間計算，不阻塞硬體／Panda 資料接收，也不偽造點火；診斷條件名為 `initial_offroad_complete`。計時只在此程序啟動時進行一次，正常熄火再點火不重算，重啟 `hardwared` 則重算。這不會先載入小模型，也不保證 eGPU 在 3 秒內就緒或能解決模型載入停滯。
+
 - 忽略啟動時產生的 `jetlink` 連結、字型快取、manager log，以及無作用的舊 `prebuild` 檔案，避免這些檔案讓乾淨版本每次都重跑 SCons。`prebuild` 不會啟用免編譯；真正原始碼修改與其他未追蹤檔案仍觸發建置。成功建置且工作目錄乾淨後，才寫入原有 commit 快取。
 - SCons 主機後端探測只初始化 CUDA／QCOM／CPU，不再透過全裝置列舉順便初始化 AMD；30 秒未返回即明確失敗，不假裝探測成功。必要的 USB 大模型建置仍保留，不能保證所有 GPU 編譯都不會停滯。
 - 建置失敗不再繼續啟動 manager，避免執行未完成的建置結果；保留原有 build 錯誤畫面。

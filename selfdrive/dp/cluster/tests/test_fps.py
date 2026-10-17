@@ -72,19 +72,19 @@ class FpsTests(unittest.TestCase):
         self.assertFalse(controller.update(dropped=True, now=0.0))
         self.assertEqual(controller.current_fps, 0.0)
 
-    def test_onroad_twenty_offroad_one(self):
+    def test_onroad_twenty_five_offroad_one(self):
         ns = main_namespace()
-        self.assertEqual(CLUSTER_FIXED_FPS, 20.0)
-        self.assertEqual(ns["DEFAULT_FPS"], 20.0)
+        self.assertEqual(CLUSTER_FIXED_FPS, 25.0)
+        self.assertEqual(ns["DEFAULT_FPS"], 25.0)
         self.assertEqual(ns["OFFROAD_RENDER_FPS"], 1.0)
         for mode in (*range(7), "invalid", None):
-            self.assertEqual(normalize_cluster_live_fps(mode), 20.0)
+            self.assertEqual(normalize_cluster_live_fps(mode), 25.0)
 
-    def test_encoder_display_and_auto_bitrate_follow_twenty(self):
+    def test_encoder_display_and_auto_bitrate_follow_twenty_five(self):
         ns = main_namespace()
-        self.assertEqual(ns["resolved_h264_encoder_fps"](20.0, 15), 20)
-        self.assertEqual(ns["resolved_usb_display_fps"](None, "h264", target_fps=20.0, h264_fps=15), 20)
-        self.assertEqual(ns["resolved_usb_h264_bitrate"]("auto", 20.0, 15), "4680k")
+        self.assertEqual(ns["resolved_h264_encoder_fps"](25.0, 15), 25)
+        self.assertEqual(ns["resolved_usb_display_fps"](None, "h264", target_fps=25.0, h264_fps=15), 25)
+        self.assertEqual(ns["resolved_usb_h264_bitrate"]("auto", 25.0, 15), "5850k")
         self.assertEqual(ns["resolved_usb_display_fps"](5, "h264", target_fps=30.0, h264_fps=15), 5)
         self.assertEqual(ns["resolved_usb_h264_bitrate"]("2M", 30.0, 15), "2M")
 
@@ -110,13 +110,13 @@ class FpsTests(unittest.TestCase):
                     ns.update(
                         is_offroad=offroad,
                         chestnut_active=chestnut,
-                        target_fps=20.0,
-                        adaptive_fps=AdaptiveFpsController(20.0),
+                        target_fps=25.0,
+                        adaptive_fps=AdaptiveFpsController(25.0),
                     )
                     exec(compile(ast.Module(body=[transition], type_ignores=[]), "main.py", "exec"), ns)
                     ns["frame_interval"] = 1.0 / ns["render_fps"]
                     exec(compile(ast.Module(body=[interval], type_ignores=[]), "main.py", "exec"), ns)
-                    self.assertEqual(ns["effective_frame_interval"], 1.0 if offroad else 1.0 / 20.0)
+                    self.assertEqual(ns["effective_frame_interval"], 1.0 if offroad else 1.0 / 25.0)
 
         pacing_names = {node.id for node in ast.walk(interval) if isinstance(node, ast.Name)}
         self.assertEqual(pacing_names, {"effective_frame_interval", "frame_interval"})
@@ -133,7 +133,7 @@ class FpsTests(unittest.TestCase):
         ]
         namespace = {"os": os}
         exec(compile(ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[])), str(path), "exec"), namespace)
-        for override, expected in (("", "20"), ("  ", "20"), ("10", "10")):
+        for override, expected in (("", "25"), ("  ", "25"), ("10", "10")):
             with patch.dict(os.environ, {"CLUSTER_FPS": override}):
                 self.assertEqual(namespace["cluster_fps"](), expected)
 

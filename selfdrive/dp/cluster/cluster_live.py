@@ -44,6 +44,7 @@ if str(REPO_ROOT) not in sys.path:
 
 LIVE_SERVICES_BASE = (
     "carState",
+    "carStateExt",
     "carParams",
     "modelV2",
     "radarState",
@@ -1142,6 +1143,7 @@ class OpenpilotLiveSource:
             self.parser._update_can_detections(data, event_t, service)
 
     def _with_debug_state(self, state: ClusterUiState) -> ClusterUiState:
+        state = replace(state, auto_brake_hold_active=self._auto_brake_hold_active())
         force_debug_ui = self._hud_debug_mode in (2, 3)
         if force_debug_ui:
             state = replace(state, debug_ui_visible=True)
@@ -1161,6 +1163,14 @@ class OpenpilotLiveSource:
         state = replace(state, live_debug=live_debug, debug_plot=debug_plot)
         self._profile_add("source.live.debug_replace", profile_stage)
         return state
+
+    def _auto_brake_hold_active(self) -> bool:
+        if self.vehicle_started() is not True:
+            return False
+        for service in ("carState", "carStateExt"):
+            if not self._service_alive(service) or not self._service_valid(service):
+                return False
+        return bool(safe_get(self._service_data("carStateExt"), "autoBrakeHoldActive", False))
 
     def _live_debug_info(self) -> LiveDebugInfo | None:
         self._refresh_debug_params()

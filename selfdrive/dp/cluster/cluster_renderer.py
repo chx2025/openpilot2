@@ -81,6 +81,7 @@ LFA_ICON_PATH = CLUSTER_ASSETS_DIR / "wheel.png"
 LFA_CRITICAL_ICON_PATH = CLUSTER_ASSETS_DIR / "wheel_critical.png"
 FOLLOW_GAP_LANE_ICON_PATH = CLUSTER_ASSETS_DIR / "FCD_Lane.png"
 BACKGROUND_IMAGE_PATH = CLUSTER_ASSETS_DIR / "bg.png"
+BACKGROUND_9P2_IMAGE_PATH = CLUSTER_ASSETS_DIR / "bg_9p2inches.png"
 TURN_SIGNAL_LEFT_ICON_PATH = CLUSTER_ASSETS_DIR / "cluster_turn_signal_left.png"
 TURN_SIGNAL_RIGHT_ICON_PATH = CLUSTER_ASSETS_DIR / "cluster_turn_signal_right.png"
 ACC_STATUS_ICON_PATH = CLUSTER_ASSETS_DIR / "speed_limit.png"
@@ -527,9 +528,12 @@ class ClusterUiRenderer:
         target_fps: int = 0,
         theme_mode: str = "auto",
         screen_mode: int = 0,
+        usb_product_id: int | None = None,
     ) -> None:
         self.width = width
         self.height = height
+        self._compact_panel = usb_product_id == 0x0092
+        self._background_image_path = BACKGROUND_9P2_IMAGE_PATH if usb_product_id == 0x0092 else BACKGROUND_IMAGE_PATH
         self.title = title
         self.target_fps = target_fps
         self.theme_mode = normalize_cluster_theme_mode(theme_mode)
@@ -816,7 +820,20 @@ class ClusterUiRenderer:
         self._profile_add("render.world", profile_stage)
         profile_stage = self._profile_start()
         self._draw_hud(state, signal_lights)
+        self._draw_auto_hold(state)
         self._profile_add("render.hud", profile_stage)
+
+    def _draw_auto_hold(self, state: ClusterUiState) -> None:
+        if not state.auto_brake_hold_active:
+            return
+        color = RED if int(time.monotonic() * 2) % 2 == 0 else GREEN
+        rl.rl_push_matrix()
+        rl.rl_scalef(self.width / DESIGN_WIDTH, self.height / DESIGN_HEIGHT, 1.0)
+        try:
+            with self._panel_region("status"):
+                self._draw_text("AUTO HOLD", DESIGN_WIDTH * 0.5, 230.0, 36.0, color, anchor="center")
+        finally:
+            rl.rl_pop_matrix()
 
     def _draw_screen_frame_effect(self, state: ClusterUiState) -> None:
         gear = (state.gear_text or "").strip().upper()
@@ -938,8 +955,37 @@ class ClusterUiRenderer:
         self._draw_background_image(theme)
         self._profile_add("render_world.background_image", profile_stage)
         profile_stage = self._profile_start()
-        self._draw_scene(scene, state)
+        if self._compact_panel:
+            sx, sy = self.width / 1920.0, self.height / 462.0
+            rl.begin_scissor_mode(round(580 * sx), round(150 * sy), round(760 * sx), round(312 * sy))
+        try:
+            self._draw_scene(scene, state)
+        finally:
+            if self._compact_panel:
+                rl.end_scissor_mode()
         self._profile_add("render_world.draw_scene", profile_stage)
+
+    @contextmanager
+    def _panel_region(self, region: str) -> Iterator[None]:
+        if not self._compact_panel:
+            yield
+            return
+        # Coordinates below are measured on the 1920x462 background. Undo the
+        # outer HUD's vertical squeeze so text and icons keep their aspect ratio.
+        center_x, center_y, scale, origin_x, origin_y = {
+            "speed": (260.0, 240.0, 0.9, SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y),
+            "gear": (1660.0, 240.0, 0.62, GEAR_STATUS_CENTER_X, GEAR_STATUS_CENTER_Y),
+            "status": (960.0, 16.0, 0.7, 960.0, 0.0),
+        }[region]
+        vertical = DESIGN_HEIGHT / 462.0
+        rl.rl_push_matrix()
+        rl.rl_translatef(center_x, center_y * vertical, 0.0)
+        rl.rl_scalef(scale, scale * vertical, 1.0)
+        rl.rl_translatef(-origin_x, -origin_y, 0.0)
+        try:
+            yield
+        finally:
+            rl.rl_pop_matrix()
 
     def _draw_background_image(self, theme: ClusterTheme) -> None:
         background_texture = self._background_texture
@@ -1524,7 +1570,7 @@ class ClusterUiRenderer:
             self._acc_status_texture = self._load_icon_texture(ACC_STATUS_ICON_PATH, "ACC status")
         if self._background_texture is None:
             self._background_texture = self._load_icon_texture(
-                BACKGROUND_IMAGE_PATH,
+                self._background_image_path,
                 "Cluster background",
             )
         if self._lfa_texture is None:
@@ -2268,7 +2314,8 @@ class ClusterUiRenderer:
             screen_mode = self.screen_mode
             if screen_mode == CLUSTER_SCREEN_MODE_DEBUG_GRAPH:
                 profile_stage = self._profile_start()
-                self._draw_speed_block(state)
+                with self._panel_region("speed"):
+                    self._draw_speed_block(state)
                 self._profile_add("hud.speed_block", profile_stage)
                 profile_stage = self._profile_start()
                 self._draw_debug_plot(
@@ -2282,10 +2329,12 @@ class ClusterUiRenderer:
                 return
 
             profile_stage = self._profile_start()
-            self._draw_speed_block(state)
+            with self._panel_region("speed"):
+                self._draw_speed_block(state)
             self._profile_add("hud.speed_block", profile_stage)
             profile_stage = self._profile_start()
-            self._draw_turn_signal("left", left_signal_lit, show_inactive=state.debug_ui_visible)
+            with self._panel_region("status"):
+                self._draw_turn_signal("left", left_signal_lit, show_inactive=state.debug_ui_visible)
             self._profile_add("hud.turn_signal_left", profile_stage)
             profile_stage = self._profile_start()
             self._draw_drive_status(state)
@@ -2294,7 +2343,8 @@ class ClusterUiRenderer:
             self._draw_system_top_metrics()
             self._profile_add("hud.system_top_metrics", profile_stage)
             profile_stage = self._profile_start()
-            self._draw_turn_signal("right", right_signal_lit, show_inactive=state.debug_ui_visible)
+            with self._panel_region("status"):
+                self._draw_turn_signal("right", right_signal_lit, show_inactive=state.debug_ui_visible)
             self._profile_add("hud.turn_signal_right", profile_stage)
             profile_stage = self._profile_start()
             if screen_mode == CLUSTER_SCREEN_MODE_DEBUG:
@@ -2585,10 +2635,12 @@ class ClusterUiRenderer:
         stats = self._system_stats.sample()
         temperature = stats.temperature_c
         memory_percent = stats.memory_used_percent
+        left_x = 260.0 if self._compact_panel else TOP_SYSTEM_METRIC_LEFT_X
+        right_x = 1660.0 if self._compact_panel else TOP_SYSTEM_METRIC_RIGHT_X
         if temperature is not None:
             self._draw_text(
                 f"TEMP {temperature:.0f}C",
-                TOP_SYSTEM_METRIC_RIGHT_X,
+                right_x,
                 TOP_SYSTEM_METRIC_Y,
                 TOP_SYSTEM_METRIC_FONT_SIZE,
                 theme.text,
@@ -2597,7 +2649,7 @@ class ClusterUiRenderer:
         if memory_percent is not None:
             self._draw_text(
                 f"MEM {memory_percent:.0f}%",
-                TOP_SYSTEM_METRIC_LEFT_X,
+                left_x,
                 TOP_SYSTEM_METRIC_Y,
                 TOP_SYSTEM_METRIC_FONT_SIZE,
                 theme.text,
@@ -2607,14 +2659,15 @@ class ClusterUiRenderer:
         if cpu_percent is not None:
             self._draw_text(
                 f"CPU {cpu_percent:.0f}%",
-                TOP_SYSTEM_METRIC_LEFT_X,
+                left_x,
                 TOP_SYSTEM_METRIC_Y + TOP_SYSTEM_METRIC_LINE_GAP,
                 TOP_SYSTEM_METRIC_FONT_SIZE,
                 theme.text,
                 anchor="center",
             )
-        self._draw_chestnut_icon(stats.chestnut_state)
-        self._draw_model_label(stats.model_name)
+        with self._panel_region("status"):
+            self._draw_chestnut_icon(stats.chestnut_state)
+            self._draw_model_label(stats.model_name)
 
     def _draw_model_label(self, text: str) -> None:
         now = time.monotonic()
@@ -3012,19 +3065,21 @@ class ClusterUiRenderer:
         layout_progress = self._acc_layout_progress if self._acc_layout_progress is not None else 1.0
         gear_text = (state.gear_text or "").strip().upper()
         if gear_text:
-            self._draw_text(
-                gear_text[:2],
-                GEAR_STATUS_CENTER_X,
-                GEAR_STATUS_CENTER_Y,
-                GEAR_STATUS_FONT_SIZE,
-                WHITE,
-                anchor="center",
-            )
+            with self._panel_region("gear"):
+                self._draw_text(
+                    gear_text[:2],
+                    GEAR_STATUS_CENTER_X,
+                    GEAR_STATUS_CENTER_Y,
+                    GEAR_STATUS_FONT_SIZE,
+                    WHITE,
+                    anchor="center",
+                )
 
-        self._draw_acc_status_icon(state)
-        self._draw_follow_gap_lane_icon(state, layout_progress)
-        self._draw_lfa_status_icon(state, layout_progress)
-        self._draw_drive_mode_icon(state, layout_progress)
+        with self._panel_region("status"):
+            self._draw_acc_status_icon(state)
+            self._draw_follow_gap_lane_icon(state, layout_progress)
+            self._draw_lfa_status_icon(state, layout_progress)
+            self._draw_drive_mode_icon(state, layout_progress)
 
     def _draw_acc_status_icon(self, state: ClusterUiState) -> None:
         theme = self._current_theme()

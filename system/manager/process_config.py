@@ -11,6 +11,7 @@ from openpilot.system.manager.process import PythonProcess, NativeProcess, Daemo
 from openpilot.common.swaglog import cloudlog
 from dragonpilot import jetlink_adapter
 from dragonpilot.egpu.bundles import EGPU_ROUTE
+from openpilot.selfdrive.dp.cluster.cluster_config import CLUSTER_DISPLAY_MODE_PARAM, CLUSTER_DISPLAY_PRODUCT_IDS
 
 WEBCAM = os.getenv("USE_WEBCAM") is not None
 LITE = os.getenv("LITE") is not None
@@ -65,6 +66,9 @@ def beep(started: bool, params: Params, CP: car.CarParams) -> bool:
 
 def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
   return True
+
+def cluster(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return int(params.get(CLUSTER_DISPLAY_MODE_PARAM) or 0) in CLUSTER_DISPLAY_PRODUCT_IDS
 
 def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started
@@ -138,7 +142,7 @@ procs = [
   #NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
   NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], or_(notcar, opview)),
   PythonProcess("logmessaged", "system.logmessaged", always_run),
-  PythonProcess("cluster_d", "selfdrive.dp.cluster_autorun", always_run),
+  PythonProcess("cluster_d", "selfdrive.dp.cluster_autorun", cluster),
 
   NativeProcess("camerad", "system/camerad", ["./camerad"], driverview, enabled=not WEBCAM),
   PythonProcess("webcamerad", "tools.webcam.camerad", driverview, enabled=WEBCAM),

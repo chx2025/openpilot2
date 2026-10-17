@@ -14,7 +14,37 @@ icon aspect-ratio fix, USB output, native H.264 encoding, settings, radar/lead
 indicators. Lead-departure detection and the `READY TO GO` reminder have been
 removed; normal radar/lead visualization is unchanged. This removal alone does
 not establish the cause of cluster freezes.
-Manager autorun remains 20 FPS (offroad rendering remains 1 FPS).
+Manager autorun uses 25 FPS (offroad rendering remains 1 FPS).
+DP **Display Mode** now includes **TR-9.2** (USB PID `0x0092`,
+1920x462) and **TR-12.3** (USB PID `0x0123`, 1920x720).
+Only these two modes start `cluster_d` and its USB renderer. The selected
+model is passed explicitly to the existing TURZX driver; it never falls back
+to another connected model, and its vendor geometry sets the rendering and
+encoding resolution. The 9.2-inch model uses `assets/bg_9p2inches.png`;
+the 12.3-inch model retains `assets/bg.png`. Switching models stops the previous renderer before
+starting the new one. Selecting Std./MAIN+/OP+/MAIN-/OP- stops cluster
+autorun entirely, even if a USB display is attached. Changes are applied
+without restarting the device. In TR modes the main display starts asleep
+and wakes only on touch, not ignition or Auto Hold. It sleeps again after
+the existing interaction timeout (normally 5 seconds onroad, 30 seconds
+with big UI, or 60 seconds offroad; explicit UI timeout overrides still apply).
+Turning ignition off does not restart this timer in TR modes.
+Existing installations must explicitly select a TR mode to enable autorun;
+the default Std. no longer starts cluster. Manual diagnostic commands below
+remain available independently of the DP setting.
+The 9.2-inch panel has its own HUD placement, not a vertically squeezed
+12.3-inch layout: speed and gear are centered at (260, 240) and (1660, 240)
+in its native 1920x462 canvas. Text/icons retain their aspect ratios; the
+central status row is uniformly reduced and inset, while the road/vehicle
+layer is clipped to the central area below it. The system metrics stay in
+the side panels. ACC-off wheel/angle animation uses the same compact central
+layout. The 12.3-inch HUD coordinates, sizes and road rendering are unchanged.
+When valid, live `carStateExt.autoBrakeHoldActive` reports actual brake hold
+onroad, `AUTO HOLD` appears below the top icon/detail row. Its text alternates
+red and green every half-second, including when ACC is off or a debug view
+is selected. Releasing hold, going offroad, or losing valid car-state/extension
+data hides it. This is display-only and does not wake the comma screen in
+TR modes or change brake control.
 The supervisor retains bounded diagnostic output in `/tmp/cluster.log`
 (`CLUSTER_LOG_PATH` overrides it). HUD startup has a 90-second grace period;
 after the first progress heartbeat, 30 seconds without render/output capacity
@@ -29,7 +59,8 @@ The eGPU status icon reads dragonpilot's `dp_egpu_*` Params and the liveness
 of `modelV2` / `modelExt.bigModel`, not sunnypilot's `ChestnutActive` or
 `deviceState.chestnutPresent`. Its failure indication is latched until offroad.
 Active eGPU labels use `dp_egpu_bundle.short_name` (or `display_name`);
-otherwise the label is `S: stock`. Jetlink-specific model labels are not ported.
+confirmed small-model output is labeled `stock`, without a size prefix.
+Jetlink-specific model labels are not ported.
 Optional services absent from this fork, including `longitudinalPlanSP`, are
 skipped explicitly; sunnypilot-only speed-limit resolver data is not synthesized.
 
@@ -208,9 +239,9 @@ Keep `--usb-h264-input-format nv12` for native hardware testing. Direct RGB
 USERPTR diagnostics were removed after measured device tests showed corrupted
 output across direct and hidden 32-bit RGB variants.
 
-Manager autostart passes `--fps 20` by default (`CLUSTER_FPS` remains available
+Manager autostart passes `--fps 25` by default (`CLUSTER_FPS` remains available
 for explicit test overrides). The configured renderer, H264 encoder input,
-TURZX display command, and live setting modes default to 20 FPS onroad,
+TURZX display command, and live setting modes default to 25 FPS onroad,
 regardless of whether Chestnut is active.
 Explicit CLI `--fps`, `--usb-h264-fps`, and `--usb-display-fps` arguments remain
 available for diagnostics. Chestnut loading/active no longer imposes an extra
@@ -245,7 +276,7 @@ range `1..99`, default `10`.
 Explicit `CLUSTER_REALTIME`, `CLUSTER_REALTIME_CORES`, or
 `CLUSTER_REALTIME_PRIORITY` environment values still win.
 The manager launches `cluster_autorun` as the single live entry point. The
-supervisor passes `--input live` with 20 FPS, H264 automatic encoder selection
+supervisor passes `--input live` with 25 FPS, H264 automatic encoder selection
 and automatic theme. The
 `ClusterHudLiveFps`, `ClusterHudEncoder`, `ClusterHudTheme`, and
 `ClusterHudBrightness` names are currently read-only integration points unless
@@ -264,7 +295,7 @@ unset or unknown keys from `/data/cluster_params/<key>` (override with
 ```bash
 mkdir -p /data/cluster_params
 echo -n 1 > /data/cluster_params/ClusterHudTheme      # 0 auto, 1 dark, 2 light
-echo -n 4 > /data/cluster_params/ClusterHudLiveFps    # all modes currently resolve to 20 FPS
+echo -n 4 > /data/cluster_params/ClusterHudLiveFps    # all modes currently resolve to 25 FPS
 ```
 
 Unset keys keep the built-in defaults.
@@ -319,9 +350,11 @@ speed arrives, and the set speed at that same size when paused or engaged.
 All top-row detail labels, including the LFA angle, share one font size and
 vertical center. The enlarged ACC-off LFA keeps its scaled angle below the wheel.
 Below the eGPU icon, the active bundle's `short_name` (or `display_name`) is
-shown with a `B: ` prefix while the eGPU runtime and model stream are active
-(for example `B: TT`). Loading, failed, inactive and disconnected states use
-`S: stock`; this fork does not expose a sunnypilot small-model selector.
+shown directly without a `B:` prefix while the eGPU runtime and model stream
+are active (for example `TT`). Confirmed small-model output always reads
+`stock`, without an `S:` prefix. Loading reads `loading`; failed, inactive
+and waiting states retain explicit status labels rather than claiming stock
+inference is running. This fork does not expose a sunnypilot small-model selector.
 Names wider than their slot scroll
 back and forth with pauses at each end, clipped to the slot; model changes
 reset the scroll position.
@@ -437,8 +470,8 @@ the small distance and mode items do not scale or fade. This does not increase
 the actual display frame rate or add additional rendered frames.
 Turn-signal positions do not change.
 When `--fps` is omitted, `ClusterHudLiveFps` is polled about once per second,
-but every supported setting value (`0` through `6`) now resolves to 20 FPS.
-Direct route/replay CLI runs also use the 20 FPS default. Explicit `--fps`
+but every supported setting value (`0` through `6`) now resolves to 25 FPS.
+Direct route/replay CLI runs also use the 25 FPS default. Explicit `--fps`
 remains a fixed diagnostic override. For H264 USB output, changing the
 effective FPS exits the current HUD process so autostart can relaunch with a
 matching encoder FPS when a launcher is present.
@@ -694,9 +727,9 @@ USB frame upload runs in no-ACK mode by default because some TURZX panels accept
 image data but never return a frame-upload response. Use `--usb-wait-frame-ack`
 only when testing a panel/driver combination known to reply after each frame.
 
-Manager autorun uses H264 at 20 FPS, trying the native encoder first and
+Manager autorun uses H264 at 25 FPS, trying the native encoder first and
 falling back to ffmpeg when the native bridge or V4L2 encoder is unavailable.
-Automatic bitrate at 20 FPS is 4.68 Mbps (about 0.585 MB/s before transport
+Automatic bitrate at 25 FPS is 5.85 Mbps (about 0.731 MB/s before transport
 overhead); higher diagnostic rates retain the 7 Mbps cap. This is a target refresh rate,
 not a guaranteed measured rate; busy-frame dropping still applies with Chestnut.
 The normal comma installation build and prebuilt release build both compile
@@ -722,7 +755,7 @@ still exists, so that fallback does not guarantee native's one-frame-in-flight
 bound. Synchronous JPEG/PNG paths naturally block rather than queue frames.
 Missing native encoder output for three seconds raises an explicit error for
 autorun to restart the HUD; normal backpressure is not treated as an error.
-The model label shows `S: stock` only after valid, live `modelV2` and
+The model label shows `stock` only after valid, live `modelV2` and
 `modelExt.bigModel=false` publications are observed onroad. Loading, failed,
 waiting, and offroad states do not imply that stock inference has started.
 The Chestnut failure icon stays latched for the drive even after stock output

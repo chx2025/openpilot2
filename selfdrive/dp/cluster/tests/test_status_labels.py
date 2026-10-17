@@ -60,22 +60,22 @@ class ModelNameTests(unittest.TestCase):
         self.sampler._params = self.params
 
     def test_inactive_states_do_not_claim_small_model(self):
-        for state, label in ((None, "model idle"), (CHESTNUT_LOADING, "B: loading"), (CHESTNUT_FAILED, "model failed")):
+        for state, label in ((None, "model idle"), (CHESTNUT_LOADING, "loading"), (CHESTNUT_FAILED, "model failed")):
             with self.subTest(state=state):
                 self.assertEqual(self.sampler._read_model_name(state), label)
         self.params.get.assert_not_called()
 
     def test_confirmed_small_output_overrides_failed_icon(self):
         self.sampler._small_model_active = True
-        self.assertEqual(self.sampler._read_model_name(CHESTNUT_FAILED), "S: stock")
+        self.assertEqual(self.sampler._read_model_name(CHESTNUT_FAILED), "stock")
 
     def test_active_uses_dragonpilot_bundle(self):
-        self.assertEqual(self.sampler._read_model_name(CHESTNUT_ACTIVE), "B: TT")
+        self.assertEqual(self.sampler._read_model_name(CHESTNUT_ACTIVE), "TT")
         self.params.get.assert_called_once_with("dp_egpu_bundle")
 
     def test_active_display_name(self):
         self.params.get.return_value = {"display_name": "Tee Time"}
-        self.assertEqual(self.sampler._read_model_name(CHESTNUT_ACTIVE), "B: Tee Time")
+        self.assertEqual(self.sampler._read_model_name(CHESTNUT_ACTIVE), "Tee Time")
 
     def test_missing_bundle_is_explicit(self):
         self.params.get.return_value = None
@@ -99,7 +99,7 @@ class ModelNameTests(unittest.TestCase):
         with patch("cluster_system_monitor.PROC_STAT_PATH", Mock(exists=Mock(return_value=True))):
             stats = self.sampler._sample_linux()
         self.assertEqual(stats.chestnut_state, CHESTNUT_ACTIVE)
-        self.assertEqual(stats.model_name, "B: TT")
+        self.assertEqual(stats.model_name, "TT")
 
 
 class ChestnutHealthTests(unittest.TestCase):
@@ -142,13 +142,13 @@ class ChestnutHealthTests(unittest.TestCase):
         self.model.bigModel = False
         self.flags["dp_egpu_running"] = False
         self.sampler._read_chestnut_state()
-        self.assertEqual(self.sampler._read_model_name(None), "S: stock")
+        self.assertEqual(self.sampler._read_model_name(None), "stock")
         for service in ("modelV2", "modelExt", "deviceState"):
             for field in ("alive", "valid"):
                 with self.subTest(service=service, field=field):
                     getattr(self.sm, field)[service] = False
                     state = self.sampler._read_chestnut_state()
-                    self.assertNotEqual(self.sampler._read_model_name(state), "S: stock")
+                    self.assertNotEqual(self.sampler._read_model_name(state), "stock")
                     getattr(self.sm, field)[service] = True
 
     def test_stale_active_cannot_hide_runtime_failures(self):

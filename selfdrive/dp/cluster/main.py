@@ -71,7 +71,7 @@ from cluster_renderer import ClusterUiRenderer
 from cluster_route_replay import RouteReplaySource
 from cluster_simulator import ClusterSimulator, RandomInputSource
 from cluster_system_monitor import ClusterProcessCoreUsageSampler
-from cluster_usb_display import TuringUsbDisplay, product_id_for_hud_mode
+from cluster_usb_display import TURZX_USB_PRODUCT_IDS, TuringUsbDisplay, product_id_for_hud_mode
 from cluster_usb_pipeline import AsyncJpegUsbPipeline
 
 DEFAULT_FPS = CLUSTER_FIXED_FPS
@@ -563,6 +563,7 @@ def run_demo(
     hud_encoder_watch: int | None,
     hud_core_mode_watch: int | None,
     hud_priority_watch: int | None,
+    usb_product_id: int | None = None,
 ) -> None:
     if hud_core_mode_watch is not None:
         hud_core_mode_watch = normalize_cluster_core_mode(hud_core_mode_watch)
@@ -613,7 +614,8 @@ def run_demo(
             fast_frame_drain_attempts=usb_fast_drain_attempts,
             fast_frame_drain_timeout_ms=usb_fast_drain_timeout_ms,
             expected_product_id=(
-                product_id_for_hud_mode(hud_mode_watch) if hud_mode_watch is not None else None
+                usb_product_id if usb_product_id is not None
+                else product_id_for_hud_mode(hud_mode_watch) if hud_mode_watch is not None else None
             ),
         )
         usb_display.set_profile_enabled(profile_render)
@@ -677,6 +679,7 @@ def run_demo(
         target_fps=max(0, int(round(target_fps))),
         theme_mode=active_theme_mode,
         screen_mode=active_screen_mode,
+        usb_product_id=usb_display.dev_pid if usb_display is not None else None,
     )
     print(f"{CLUSTER_SCREEN_MODE_PARAM} initial: {active_screen_mode}", flush=True)
     print(f"{CLUSTER_CAMERA_VIEW_MODE_PARAM} initial: {active_camera_view_mode}", flush=True)
@@ -1369,7 +1372,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Target refresh rate. Use 0 for uncapped/as-fast-as-possible. "
-            f"When omitted, CLI runs read {CLUSTER_LIVE_FPS_PARAM}; all setting modes currently resolve to 20 FPS."
+            f"When omitted, CLI runs read {CLUSTER_LIVE_FPS_PARAM}; all setting modes currently resolve to 25 FPS."
         ),
     )
     parser.add_argument(
@@ -1656,6 +1659,13 @@ def parse_args() -> argparse.Namespace:
         help=f"HUD theme override. Default reads {CLUSTER_THEME_PARAM}: 0 auto, 1 dark, 2 light.",
     )
     parser.add_argument(
+        "--usb-product-id",
+        type=lambda value: int(value, 0),
+        choices=tuple(TURZX_USB_PRODUCT_IDS),
+        default=None,
+        help="Restrict USB output to one TURZX model (0x0092: 9.2-inch, 0x0123: 12.3-inch).",
+    )
+    parser.add_argument(
         "--cluster-hud-mode",
         type=int,
         default=None,
@@ -1744,6 +1754,9 @@ def parse_args() -> argparse.Namespace:
     )
     raw_args = sys.argv[1:]
     args = parser.parse_args()
+    if args.usb_product_id is not None and args.cluster_hud_mode is not None:
+        if args.usb_product_id != product_id_for_hud_mode(args.cluster_hud_mode):
+            parser.error("--usb-product-id conflicts with --cluster-hud-mode")
     args.fps_from_cli = args.fps is not None
     args.usb_codec_from_cli = option_present(raw_args, "--usb-codec")
     args.usb_h264_backend_from_cli = option_present(raw_args, "--usb-h264-backend")
@@ -1950,6 +1963,7 @@ def main(*, exit_on_error: bool = True) -> None:
             args.cluster_hud_encoder,
             args.cluster_hud_core_mode,
             args.cluster_hud_priority,
+            args.usb_product_id,
         )
     except KeyboardInterrupt:
         print("\nStopped.")

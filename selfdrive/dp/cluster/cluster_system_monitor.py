@@ -23,7 +23,7 @@ class SystemStats:
     cpu_core_percents: tuple[float | None, ...] = ()
     cpu_total_percent: float | None = None
     chestnut_state: str | None = None
-    model_name: str = "S: ?"
+    model_name: str = "model unknown"
 
 
 CHESTNUT_LOADING = "loading"
@@ -102,10 +102,10 @@ class SystemStatsSampler:
             if self._params is None:
                 return "model unknown"
             if self._small_model_active:
-                return "S: stock"
+                return "stock"
             if chestnut_state != CHESTNUT_ACTIVE:
                 if chestnut_state == CHESTNUT_LOADING:
-                    return "B: loading"
+                    return "loading"
                 if chestnut_state == CHESTNUT_FAILED:
                     return "model failed"
                 return "model idle" if not self._chestnut_onroad else "model waiting"
@@ -115,7 +115,7 @@ class SystemStatsSampler:
             short_name = bundle.get("short_name") or bundle.get("display_name")
             if not short_name:
                 raise ValueError("Active eGPU bundle has no model name")
-            return f"B: {short_name}"
+            return str(short_name)
         except Exception:
             logging.getLogger(__name__).exception("Unable to read the active cluster model name")
             return "model unknown"

@@ -5,6 +5,11 @@ from dataclasses import dataclass
 
 DESIGN_WIDTH = 1920
 DESIGN_HEIGHT = 720
+CLUSTER_DISPLAY_MODE_PARAM = "dp_ui_display_mode"
+CLUSTER_DISPLAY_PRODUCT_IDS = {
+    5: 0x0092,  # TR-9.2
+    6: 0x0123,  # TR-12.3
+}
 
 # Vehicle/radar diagnostic JSONL logging is a tuning aid, not a runtime feature.
 # It builds a rounded payload dict for every tracked object on every sensor
@@ -160,7 +165,7 @@ def vehicle_diagnostic_log_enabled() -> bool:
 
 AUTO_DARK_START_HOUR = 18
 AUTO_LIGHT_START_HOUR = 6
-CLUSTER_FIXED_FPS = 20.0
+CLUSTER_FIXED_FPS = 25.0
 CLUSTER_LIVE_FPS_BY_MODE = {
     0: CLUSTER_FIXED_FPS,
     1: CLUSTER_FIXED_FPS,
