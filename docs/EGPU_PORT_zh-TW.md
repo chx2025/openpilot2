@@ -34,6 +34,7 @@ v2 改成**下載模型的 onnx、在車上自己編譯一次**，warp 永遠編
 - SCons 主機後端探測只初始化 CUDA／QCOM／CPU，不再透過全裝置列舉順便初始化 AMD；30 秒未返回即明確失敗，不假裝探測成功。必要的 USB 大模型建置仍保留，不能保證所有 GPU 編譯都不會停滯。
 - 建置失敗不再繼續啟動 manager，避免執行未完成的建置結果；保留原有 build 錯誤畫面。
 - `hardwared` 未 started 時，在啟動條件改變或每 30 秒記錄 `Startup waiting`，含不成立條件、Panda 存活／有效性、點火與 harness 狀態。此記錄不改動點火、安全或溫度閘門。
+- 開機背光可能高於 tici 的 40% 軟體亮度上限；反算亮度百分比時限制在 0–100，避免例如 `664 / (1023 × 0.4 / 100) = 162` 寫入 `deviceState.screenBrightnessPercent` 的 Int8 欄位而使 `hardwared` 崩潰、停在 offroad。正常亮度換算與原本亮度上限不變。任一 `hardwared` 工作執行緒意外停止時，主程序明確失敗並結束其他執行緒；manager 使用既有機制重啟 `hardwared`，不再留下 exit code 0 且無 `deviceState` 的狀態。重啟後仍須通過上述 3 秒等待與全部原有啟動條件。
 
 | tinygrad | 位置 | 誰用 |
 | --- | --- | --- |

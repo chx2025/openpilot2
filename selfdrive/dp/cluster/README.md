@@ -37,7 +37,10 @@ The 9.2-inch panel has its own HUD placement, not a vertically squeezed
 in its native 1920x462 canvas. Text/icons retain their aspect ratios; the
 central status row is uniformly reduced and inset, while the road/vehicle
 layer is clipped to the central area below it. The system metrics stay in
-the side panels. ACC-off wheel/angle animation uses the same compact central
+the side panels, with MEM/CPU centered at x=340 and TEMP at x=1580 to
+clear the background artwork. Speed digits and gear text are 20% larger
+than the initial 9.2-inch layout; their centers and the km/h font size are
+unchanged. ACC-off wheel/angle animation uses the same compact central
 layout. The 12.3-inch HUD coordinates, sizes and road rendering are unchanged.
 When valid, live `carStateExt.autoBrakeHoldActive` reports actual brake hold
 onroad, `AUTO HOLD` appears below the top icon/detail row. Its text alternates

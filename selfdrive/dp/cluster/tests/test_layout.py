@@ -120,3 +120,34 @@ def test_road_clipping_is_compact_only_and_cleans_up(compact):
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "<road clipping>", "exec"),
              {"self": renderer, "rl": rl, "scene": None, "state": None})
     assert events == ([(580, 150, 760, 312), "draw", "end"] if compact else ["draw"])
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_side_metrics_move_inward_only_on_compact_panel(compact):
+    method = next(n for n in RENDERER.body if isinstance(n, ast.FunctionDef) and n.name == "_draw_system_top_metrics")
+    positions = [n for n in method.body if isinstance(n, ast.Assign)
+                 and isinstance(n.targets[0], ast.Name) and n.targets[0].id in ("left_x", "right_x")]
+    namespace = {"self": SimpleNamespace(_compact_panel=compact),
+                 "TOP_SYSTEM_METRIC_LEFT_X": 260, "TOP_SYSTEM_METRIC_RIGHT_X": 1660}
+    exec(compile(ast.Module(body=positions, type_ignores=[]), "<metric positions>", "exec"), namespace)
+    assert (namespace["left_x"], namespace["right_x"]) == ((340, 1580) if compact else (260, 1660))
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_speed_and_gear_fonts_increase_exactly_twenty_percent_on_compact_panel(compact):
+    speed = next(n for n in RENDERER.body if isinstance(n, ast.FunctionDef) and n.name == "_draw_speed_block")
+    assignment = next(n for n in speed.body if isinstance(n, ast.Assign)
+                      and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "speed_font_size")
+    namespace = {"self": SimpleNamespace(_compact_panel=compact)}
+    exec(compile(ast.Module(body=[assignment], type_ignores=[]), "<speed font>", "exec"), namespace)
+    assert namespace["speed_font_size"] == pytest.approx(198 if compact else 165)
+    unit = next(n for n in speed.body if isinstance(n, ast.Assign)
+                and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "unit_font_size")
+    assert ast.literal_eval(unit.value) == 24
+
+    gear = next(n for n in RENDERER.body if isinstance(n, ast.FunctionDef) and n.name == "_draw_drive_status")
+    draw = next(n for n in ast.walk(gear) if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute) and n.func.attr == "_draw_text")
+    size = eval(compile(ast.Expression(body=draw.args[3]), "<gear font>", "eval"),
+                {**namespace, "GEAR_STATUS_FONT_SIZE": 100})
+    assert size == pytest.approx(120 if compact else 100)

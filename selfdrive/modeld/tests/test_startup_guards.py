@@ -1,4 +1,5 @@
 import ast
+import io
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -149,3 +150,90 @@ def test_boot_delay_preserves_real_ignition_and_other_startup_gates(delay_comple
   }
   exec(compile(ast.Module(body=loop.body[index:index + 2], type_ignores=[]), "<startup decision>", "exec"), namespace)
   assert namespace["should_start"] == expected
+
+
+@pytest.mark.parametrize("device_type,brightness,expected", [
+  ("tici", 0, 0),
+  ("tici", 204, 49),
+  ("tici", 409, 99),
+  ("tici", 664, 100),
+  ("tici", 1023, 100),
+  ("mici", 664, 64),
+  ("mici", 1023, 100),
+])
+def test_boot_brightness_stays_within_device_state_percentage(device_type, brightness, expected):
+  tree = ast.parse((ROOT / "system/hardware/tici/hardware.py").read_text(encoding="utf-8"))
+  getter = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "get_screen_brightness")
+
+  def open_backlight(path):
+    values = {
+      "/sys/class/backlight/panel0-backlight/max_brightness": 1023,
+      "/sys/class/backlight/panel0-backlight/brightness": brightness,
+    }
+    return io.StringIO(str(values[path]))
+
+  namespace = {"open": open_backlight}
+  exec(compile(ast.Module(body=[getter], type_ignores=[]), "<screen brightness>", "exec"), namespace)
+  actual = namespace["get_screen_brightness"](SimpleNamespace(get_device_type=lambda: device_type))
+  assert actual == expected
+  assert 0 <= actual <= 100
+
+
+def test_hardwared_worker_exit_fails_process_and_joins_threads():
+  tree = ast.parse((ROOT / "system/hardware/hardwared.py").read_text(encoding="utf-8"))
+  main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+  threads = []
+  ended = []
+  joined = []
+
+  def thread(target, args):
+    result = SimpleNamespace(
+      name=target.__name__, start=lambda: None,
+      is_alive=lambda: target.__name__ != "hardware_thread",
+      join=lambda: joined.append(target.__name__),
+    )
+    threads.append(result)
+    return result
+
+  def hw_state_thread(*args):
+    pass
+
+  def hardware_thread(*args):
+    pass
+
+  def touch_thread(*args):
+    pass
+
+  namespace = {
+    "queue": SimpleNamespace(Queue=lambda **kwargs: None),
+    "threading": SimpleNamespace(Event=lambda: SimpleNamespace(set=lambda: ended.append(True)), Thread=thread),
+    "hw_state_thread": hw_state_thread, "hardware_thread": hardware_thread, "touch_thread": touch_thread,
+    "TICI": True, "time": SimpleNamespace(sleep=lambda seconds: None),
+  }
+  exec(compile(ast.Module(body=[main], type_ignores=[]), "<hardwared main>", "exec"), namespace)
+  with pytest.raises(RuntimeError, match="hardwared threads stopped unexpectedly: hardware_thread"):
+    namespace["main"]()
+  assert ended == [True]
+  assert joined == [t.name for t in threads]
+
+
+def test_manager_restarts_dead_hardwared():
+  tree = ast.parse((ROOT / "system/manager/process_config.py").read_text(encoding="utf-8"))
+  process = next(n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                 and n.func.id == "PythonProcess" and n.args and isinstance(n.args[0], ast.Constant)
+                 and n.args[0].value == "hardwared")
+  assert any(k.arg == "restart_if_crash" and ast.literal_eval(k.value) is True for k in process.keywords)
+
+  process_tree = ast.parse((ROOT / "system/manager/process.py").read_text(encoding="utf-8"))
+  ensure = next(n for n in process_tree.body if isinstance(n, ast.FunctionDef) and n.name == "ensure_running")
+  calls = []
+  dead = SimpleNamespace(
+    name="hardwared", enabled=True, restart_if_crash=True,
+    should_run=lambda *args: True, proc=SimpleNamespace(is_alive=lambda: False, exitcode=0),
+    restart=lambda: calls.append("restart"), start=lambda: calls.append("start"),
+  )
+  namespace = {"cloudlog": SimpleNamespace(error=lambda message: calls.append(message))}
+  future = ast.parse("from __future__ import annotations").body
+  exec(compile(ast.Module(body=[*future, ensure], type_ignores=[]), "<ensure running>", "exec"), namespace)
+  assert namespace["ensure_running"]([dead], False) == [dead]
+  assert calls == ["Restarting hardwared (exitcode 0)", "restart", "start"]

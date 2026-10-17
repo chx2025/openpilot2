@@ -516,13 +516,13 @@ def main():
   try:
     while True:
       time.sleep(1)
-      if not all(t.is_alive() for t in threads):
-        break
+      stopped = [t.name for t in threads if not t.is_alive()]
+      if stopped:
+        raise RuntimeError(f"hardwared threads stopped unexpectedly: {', '.join(stopped)}")
   finally:
     end_event.set()
-
-  for t in threads:
-    t.join()
+    for t in threads:
+      t.join()
 
 
 if __name__ == "__main__":

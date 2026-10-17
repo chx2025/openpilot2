@@ -2635,8 +2635,8 @@ class ClusterUiRenderer:
         stats = self._system_stats.sample()
         temperature = stats.temperature_c
         memory_percent = stats.memory_used_percent
-        left_x = 260.0 if self._compact_panel else TOP_SYSTEM_METRIC_LEFT_X
-        right_x = 1660.0 if self._compact_panel else TOP_SYSTEM_METRIC_RIGHT_X
+        left_x = 340.0 if self._compact_panel else TOP_SYSTEM_METRIC_LEFT_X
+        right_x = 1580.0 if self._compact_panel else TOP_SYSTEM_METRIC_RIGHT_X
         if temperature is not None:
             self._draw_text(
                 f"TEMP {temperature:.0f}C",
@@ -3070,7 +3070,7 @@ class ClusterUiRenderer:
                     gear_text[:2],
                     GEAR_STATUS_CENTER_X,
                     GEAR_STATUS_CENTER_Y,
-                    GEAR_STATUS_FONT_SIZE,
+                    GEAR_STATUS_FONT_SIZE * (1.2 if self._compact_panel else 1.0),
                     WHITE,
                     anchor="center",
                 )
@@ -3371,7 +3371,7 @@ class ClusterUiRenderer:
         # Orbitron renders wider per point size than the previous KaiGen font.
         # Font size is fixed at the previous max instead of scaling with speed, so the
         # digit block's height/position never shifts as speed changes.
-        speed_font_size = 165
+        speed_font_size = 165 * (1.2 if self._compact_panel else 1.0)
 
         self._draw_fixed_width_speed_digits(
             speed_value, SPEED_VALUE_CENTER_X, SPEED_VALUE_CENTER_Y, speed_font_size, theme.text
